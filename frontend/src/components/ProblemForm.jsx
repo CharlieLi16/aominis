@@ -159,32 +159,16 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                 console.log('Could not store problem on API:', e);
             }
             
-            // Also store to Bot Server for solving
-            try {
-                const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
-                await fetch(`${botServerUrl}/problems`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        hash: problemHash,
-                        text: problemText,
-                        type: problemType
-                    })
-                });
-                console.log('Problem stored to Bot Server');
-            } catch (e) {
-                console.log('Could not store problem on Bot Server:', e);
-            }
-            
             // Get orderId from event logs
             const iface = new ethers.Interface([
                 "event ProblemPosted(uint256 indexed orderId, address indexed issuer, uint8 problemType, uint8 timeTier, uint256 reward)"
             ]);
+            let orderId = null;
             for (const log of receipt.logs) {
                 try {
                     const parsed = iface.parseLog(log);
                     if (parsed && parsed.name === 'ProblemPosted') {
-                        const orderId = parsed.args[0].toString();
+                        orderId = parsed.args[0].toString();
                         // Save problem text to localStorage
                         const savedProblems = JSON.parse(localStorage.getItem('ominis_problems') || '{}');
                         savedProblems[orderId] = {
@@ -199,6 +183,54 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                         break;
                     }
                 } catch (e) {}
+            }
+            
+            // Notify Bot Server to solve and submit (subscription mode uses webhook)
+            const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
+            
+            if (useSubscription && orderId) {
+                // Subscription mode: call webhook to solve immediately and submit to chain
+                try {
+                    console.log(`Calling webhook for order #${orderId}...`);
+                    const webhookResponse = await fetch(`${botServerUrl}/webhook/problem`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            order_id: parseInt(orderId),
+                            problem_hash: problemHash,
+                            problem_text: problemText,
+                            problem_type: problemType,
+                            submit_to_chain: true
+                        })
+                    });
+                    const webhookResult = await webhookResponse.json();
+                    console.log('Webhook result:', webhookResult);
+                    
+                    if (webhookResult.success) {
+                        console.log(`Solution: ${webhookResult.solution}`);
+                        if (webhookResult.reveal_tx) {
+                            console.log(`Submitted to chain! TX: ${webhookResult.reveal_tx}`);
+                        }
+                    }
+                } catch (e) {
+                    console.log('Webhook call failed:', e);
+                }
+            } else {
+                // Pay-per-question mode: just store problem for bot polling
+                try {
+                    await fetch(`${botServerUrl}/problems`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            hash: problemHash,
+                            text: problemText,
+                            type: problemType
+                        })
+                    });
+                    console.log('Problem stored to Bot Server');
+                } catch (e) {
+                    console.log('Could not store problem on Bot Server:', e);
+                }
             }
             
             // Clear form

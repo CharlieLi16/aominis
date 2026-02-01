@@ -1351,19 +1351,61 @@ def update_verification_status(order_id):
 
 # ========== Webhook Endpoints (Platform Push Mode) ==========
 
+# Solution status tracking for webhook submissions
+webhook_solution_status = {}  # {order_id: {status, solution, tx_hash, ...}}
+
+def init_sdk_if_needed():
+    """Initialize SDK if not already running"""
+    if bot_state.sdk:
+        return bot_state.sdk
+    
+    private_key = os.getenv('PRIVATE_KEY')
+    rpc_url = os.getenv('RPC_URL')
+    core_address = os.getenv('CORE_ADDRESS')
+    
+    if not all([private_key, rpc_url, core_address]):
+        logger.error("[WEBHOOK] Missing environment variables for SDK")
+        return None
+    
+    try:
+        sdk = OminisSDK(
+            private_key=private_key,
+            rpc_url=rpc_url,
+            core_address=core_address
+        )
+        orderbook_address = os.getenv('ORDERBOOK_ADDRESS')
+        if orderbook_address:
+            sdk.set_orderbook_address(orderbook_address)
+        
+        bot_state.sdk = sdk
+        logger.info(f"[WEBHOOK] SDK initialized, address: {sdk.address}")
+        return sdk
+    except Exception as e:
+        logger.error(f"[WEBHOOK] Failed to init SDK: {e}")
+        return None
+
+
 @app.route('/webhook/problem', methods=['POST'])
 def receive_problem_webhook():
     """
     Receive problem push from platform (Webhook mode).
     Platform calls this when a user selects this bot.
     
+    Immediately solves the problem and submits to chain (commit + reveal).
+    
     Request body:
-        - order_id: int
+        - order_id: int (required)
         - problem_hash: str
-        - problem_text: str
+        - problem_text: str (required)
         - problem_type: int
-        - deadline: int (unix timestamp)
-        - user_tier: str (subscription tier)
+        - submit_to_chain: bool (default: true)
+    
+    Returns:
+        - success: bool
+        - solution: str
+        - steps: list
+        - commit_tx: str (if submitted)
+        - reveal_tx: str (if submitted)
     """
     data = request.get_json()
     if not data:
@@ -1373,17 +1415,27 @@ def receive_problem_webhook():
     problem_hash = data.get('problem_hash', '')
     problem_text = data.get('problem_text', '')
     problem_type = data.get('problem_type', 0)
-    deadline = data.get('deadline', 0)
-    user_tier = data.get('user_tier', 'FREE')
+    submit_to_chain = data.get('submit_to_chain', True)
     
-    logger.info(f"[WEBHOOK] Received problem #{order_id} (type={problem_type}, tier={user_tier})")
+    logger.info(f"[WEBHOOK] Received problem #{order_id} (type={problem_type}, submit={submit_to_chain})")
     
     if not problem_text:
         return jsonify({
             'success': False,
-            'accepted': False,
             'error': 'Problem text required'
         })
+    
+    if order_id is None:
+        return jsonify({
+            'success': False,
+            'error': 'order_id required'
+        })
+    
+    # Update status
+    webhook_solution_status[order_id] = {
+        'status': 'solving',
+        'started_at': datetime.now().isoformat()
+    }
     
     # Store problem for solving
     normalized_hash = '0x' + problem_hash.lower().replace('0x', '')
@@ -1397,26 +1449,101 @@ def receive_problem_webhook():
     # Solve the problem immediately
     try:
         solution_data = solve_problem(problem_type, normalized_hash, problem_text)
+        solution = solution_data['answer']
+        steps = solution_data.get('steps', [])
         
         # Store solution
         store_solution_data(order_id, normalized_hash, solution_data)
         
-        logger.info(f"[WEBHOOK] Solved #{order_id}: {solution_data['answer']}")
+        logger.info(f"[WEBHOOK] Solved #{order_id}: {solution}")
         
-        return jsonify({
+        webhook_solution_status[order_id]['status'] = 'solved'
+        webhook_solution_status[order_id]['solution'] = solution
+        
+        result = {
             'success': True,
-            'accepted': True,
             'order_id': order_id,
-            'solution': solution_data['answer'],
-            'steps': solution_data.get('steps', []),
+            'solution': solution,
+            'steps': steps,
             'solved_at': datetime.now().isoformat()
-        })
+        }
+        
+        # Submit to chain if requested
+        if submit_to_chain:
+            sdk = init_sdk_if_needed()
+            if not sdk:
+                result['chain_error'] = 'SDK not available'
+                webhook_solution_status[order_id]['status'] = 'solved_not_submitted'
+                return jsonify(result)
+            
+            try:
+                # Generate salt for commit-reveal
+                salt = os.urandom(32)
+                
+                # Commit solution
+                webhook_solution_status[order_id]['status'] = 'committing'
+                logger.info(f"[WEBHOOK] Committing solution for #{order_id}...")
+                
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                commit_receipt = loop.run_until_complete(
+                    sdk.commit_solution(order_id, solution, salt)
+                )
+                result['commit_tx'] = commit_receipt.tx_hash
+                logger.info(f"[WEBHOOK] Commit TX: {commit_receipt.tx_hash}")
+                
+                if not commit_receipt.success:
+                    # Wait and check if commit actually succeeded
+                    for retry in range(3):
+                        loop.run_until_complete(asyncio.sleep(3))
+                        check_order = loop.run_until_complete(sdk.get_order(order_id))
+                        if check_order.status.name == 'COMMITTED':
+                            logger.info(f"[WEBHOOK] Commit confirmed after retry")
+                            break
+                    else:
+                        result['chain_error'] = 'Commit may have failed'
+                        webhook_solution_status[order_id]['status'] = 'commit_failed'
+                        loop.close()
+                        return jsonify(result)
+                
+                # Wait for commit to propagate
+                loop.run_until_complete(asyncio.sleep(2))
+                
+                # Reveal solution
+                webhook_solution_status[order_id]['status'] = 'revealing'
+                logger.info(f"[WEBHOOK] Revealing solution for #{order_id}...")
+                
+                reveal_receipt = loop.run_until_complete(
+                    sdk.reveal_solution(order_id, solution, salt)
+                )
+                result['reveal_tx'] = reveal_receipt.tx_hash
+                logger.info(f"[WEBHOOK] Reveal TX: {reveal_receipt.tx_hash}")
+                
+                loop.close()
+                
+                if reveal_receipt.success:
+                    webhook_solution_status[order_id]['status'] = 'completed'
+                    webhook_solution_status[order_id]['reveal_tx'] = reveal_receipt.tx_hash
+                    logger.info(f"[WEBHOOK] Order #{order_id} COMPLETED!")
+                    bot_state.stats['orders_solved'] += 1
+                else:
+                    webhook_solution_status[order_id]['status'] = 'reveal_failed'
+                    result['chain_error'] = 'Reveal may have failed'
+                    
+            except Exception as chain_err:
+                logger.error(f"[WEBHOOK] Chain submission error: {chain_err}")
+                result['chain_error'] = str(chain_err)
+                webhook_solution_status[order_id]['status'] = 'chain_error'
+        
+        return jsonify(result)
         
     except Exception as e:
         logger.error(f"[WEBHOOK] Error solving #{order_id}: {e}")
+        webhook_solution_status[order_id]['status'] = 'error'
+        webhook_solution_status[order_id]['error'] = str(e)
         return jsonify({
             'success': False,
-            'accepted': True,
             'error': str(e)
         })
 
@@ -1430,6 +1557,53 @@ def webhook_status():
         'supported_types': [0, 1, 2, 3, 4],  # All problem types
         'is_premium': False,
         'status': 'online' if bot_state.running else 'standby'
+    })
+
+
+@app.route('/webhook/solution-status/<int:order_id>', methods=['GET'])
+def get_webhook_solution_status(order_id):
+    """
+    Get the status of a webhook-triggered solution.
+    
+    Status values:
+        - pending: Not started
+        - solving: GPT is working on the problem
+        - solved: Solution found, not yet submitted
+        - committing: Submitting commit transaction
+        - revealing: Submitting reveal transaction
+        - completed: Successfully submitted to chain
+        - commit_failed: Commit transaction failed
+        - reveal_failed: Reveal transaction failed
+        - chain_error: Error during chain submission
+        - error: General error
+    """
+    if order_id not in webhook_solution_status:
+        # Check if solution exists in storage (may have been solved by polling bot)
+        order_key = str(order_id)
+        if order_key in solution_storage:
+            return jsonify({
+                'success': True,
+                'order_id': order_id,
+                'status': 'completed',
+                'solution': solution_storage[order_key].get('answer', ''),
+                'source': 'storage'
+            })
+        return jsonify({
+            'success': False,
+            'order_id': order_id,
+            'status': 'not_found',
+            'error': 'No webhook submission found for this order'
+        })
+    
+    status_info = webhook_solution_status[order_id]
+    return jsonify({
+        'success': True,
+        'order_id': order_id,
+        'status': status_info.get('status', 'unknown'),
+        'solution': status_info.get('solution'),
+        'reveal_tx': status_info.get('reveal_tx'),
+        'error': status_info.get('error'),
+        'started_at': status_info.get('started_at')
     })
 
 
