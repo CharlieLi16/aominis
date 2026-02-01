@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { NETWORKS, SUBSCRIPTION_MANAGER_ABI, USDC_ABI } from '../config';
 
 // Subscription tier configurations
 const SUBSCRIPTION_TIERS = [
@@ -41,40 +42,92 @@ const SUBSCRIPTION_TIERS = [
     }
 ];
 
-// Bot Server URL
-// Bot server URL (optional - for testing)
-const BOT_SERVER_URL = import.meta.env.VITE_BOT_SERVER_URL || 'http://localhost:5001';
-
 function SubscriptionPage({ account, usdcContract, network }) {
     const [currentTier, setCurrentTier] = useState(null);
     const [subscription, setSubscription] = useState(null);
     const [creditsRemaining, setCreditsRemaining] = useState(0);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [subscribing, setSubscribing] = useState(null);
+    const [subContract, setSubContract] = useState(null);
+    const [error, setError] = useState(null);
 
-    // Fetch subscription status
+    // Initialize SubscriptionManager contract
     useEffect(() => {
-        if (account) {
+        const initContract = async () => {
+            if (!window.ethereum) return;
+            
+            const networkConfig = NETWORKS[network];
+            if (!networkConfig?.contracts?.subscriptionManager) {
+                console.log('SubscriptionManager not configured');
+                setLoading(false);
+                return;
+            }
+
+            try {
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+                const contract = new ethers.Contract(
+                    networkConfig.contracts.subscriptionManager,
+                    SUBSCRIPTION_MANAGER_ABI,
+                    signer
+                );
+                setSubContract(contract);
+            } catch (e) {
+                console.error('Failed to init subscription contract:', e);
+                setLoading(false);
+            }
+        };
+        initContract();
+    }, [network]);
+
+    // Fetch subscription status from chain
+    useEffect(() => {
+        if (account && subContract) {
             fetchSubscriptionStatus();
         }
-    }, [account]);
+    }, [account, subContract]);
 
     const fetchSubscriptionStatus = async () => {
-        // In production, this would fetch from SubscriptionManager contract
-        // For now, use mock data
+        if (!subContract || !account) return;
+        
+        setLoading(true);
+        setError(null);
         try {
-            // Mock subscription status
-            const mockSub = {
-                tier: 0, // FREE
-                endTime: Date.now() + 30 * 24 * 60 * 60 * 1000,
-                creditsRemaining: 3,
-                creditsUsedThisMonth: 2
-            };
-            setSubscription(mockSub);
-            setCurrentTier(mockSub.tier);
-            setCreditsRemaining(mockSub.creditsRemaining);
+            // Fetch real data from chain
+            const subData = await subContract.getUserSubscription(account);
+            const credits = await subContract.getCreditsRemaining(account);
+            const isActive = await subContract.isSubscriptionActive(account);
+            
+            const tier = Number(subData.tier);
+            const endTime = Number(subData.endTime) * 1000; // Convert to milliseconds
+            const creditsUsed = Number(subData.creditsUsedThisMonth);
+            const creditsLeft = Number(credits);
+            
+            console.log('Subscription from chain:', { tier, endTime, creditsUsed, creditsLeft, isActive });
+            
+            setSubscription({
+                tier: tier,
+                endTime: endTime,
+                creditsRemaining: creditsLeft,
+                creditsUsedThisMonth: creditsUsed,
+                isActive: isActive
+            });
+            setCurrentTier(tier);
+            setCreditsRemaining(creditsLeft);
         } catch (e) {
-            console.error('Error fetching subscription:', e);
+            console.error('Error fetching subscription from chain:', e);
+            // Default to no subscription
+            setSubscription({
+                tier: 0,
+                endTime: 0,
+                creditsRemaining: 0,
+                creditsUsedThisMonth: 0,
+                isActive: false
+            });
+            setCurrentTier(0);
+            setCreditsRemaining(0);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -84,38 +137,62 @@ function SubscriptionPage({ account, usdcContract, network }) {
             return;
         }
 
+        if (!subContract) {
+            alert('Subscription contract not available');
+            return;
+        }
+
         setSubscribing(tier.id);
+        setError(null);
+        
         try {
-            // In production, this would:
-            // 1. Approve USDC for SubscriptionManager
-            // 2. Call subscribe(tier) on SubscriptionManager contract
+            const networkConfig = NETWORKS[network];
             
+            // For paid tiers, need to approve USDC first
             if (tier.price > 0 && usdcContract) {
-                // Mock: would approve and transfer USDC
-                console.log(`Subscribing to ${tier.name} for $${tier.price}`);
+                // Get tier price from contract (in USDC with 6 decimals)
+                const tierPrice = await subContract.getTierPrice(tier.id);
+                console.log(`Tier ${tier.id} price from contract:`, ethers.formatUnits(tierPrice, 6), 'USDC');
+                
+                // Check allowance
+                const allowance = await usdcContract.allowance(account, networkConfig.contracts.subscriptionManager);
+                console.log('Current allowance:', ethers.formatUnits(allowance, 6), 'USDC');
+                
+                if (allowance < tierPrice) {
+                    console.log('Approving USDC...');
+                    const approveTx = await usdcContract.approve(
+                        networkConfig.contracts.subscriptionManager,
+                        tierPrice
+                    );
+                    await approveTx.wait();
+                    console.log('USDC approved');
+                }
             }
 
-            // Mock success
-            await new Promise(r => setTimeout(r, 2000));
+            // Call subscribe on contract
+            console.log(`Subscribing to tier ${tier.id}...`);
+            const tx = await subContract.subscribe(tier.id);
+            console.log('Transaction sent:', tx.hash);
             
-            setCurrentTier(tier.id);
-            setCreditsRemaining(tier.credits === -1 ? 999 : tier.credits);
-            setSubscription({
-                tier: tier.id,
-                endTime: Date.now() + 30 * 24 * 60 * 60 * 1000,
-                creditsRemaining: tier.credits === -1 ? 999 : tier.credits,
-                creditsUsedThisMonth: 0
-            });
+            const receipt = await tx.wait();
+            console.log('Transaction confirmed:', receipt);
 
+            // Refresh subscription status
+            await fetchSubscriptionStatus();
+            
             alert(`Successfully subscribed to ${tier.name}!`);
         } catch (e) {
-            alert(`Subscription failed: ${e.message}`);
+            console.error('Subscription failed:', e);
+            const reason = e.reason || e.message || 'Unknown error';
+            setError(`Subscription failed: ${reason}`);
+            alert(`Subscription failed: ${reason}`);
         } finally {
             setSubscribing(null);
         }
     };
 
     const formatEndDate = (timestamp) => {
+        if (!timestamp || timestamp === 0) return 'N/A';
         return new Date(timestamp).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
@@ -125,8 +202,34 @@ function SubscriptionPage({ account, usdcContract, network }) {
 
     return (
         <div className="space-y-6">
+            {/* Loading state */}
+            {loading && (
+                <div className="glass rounded-2xl p-6 text-center">
+                    <div className="flex items-center justify-center gap-2 text-gray-400">
+                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        Loading subscription status...
+                    </div>
+                </div>
+            )}
+
+            {/* Error display */}
+            {error && (
+                <div className="glass rounded-xl p-4 border-red-500/30 bg-red-500/10">
+                    <div className="flex items-center gap-2 text-red-400">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>{error}</span>
+                        <button onClick={() => setError(null)} className="ml-auto">×</button>
+                    </div>
+                </div>
+            )}
+
             {/* Current Subscription Status */}
-            {subscription && (
+            {!loading && subscription && (
                 <div className="glass rounded-2xl p-6">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -134,6 +237,15 @@ function SubscriptionPage({ account, usdcContract, network }) {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                             </svg>
                             Your Subscription
+                            <button 
+                                onClick={fetchSubscriptionStatus}
+                                className="ml-2 p-1 text-gray-400 hover:text-white rounded"
+                                title="Refresh"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </button>
                         </h2>
                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${
                             currentTier === 0 ? 'bg-gray-500/20 text-gray-400' :
