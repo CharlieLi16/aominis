@@ -3,56 +3,6 @@ pragma solidity ^0.8.20;
 
 import "./interfaces/ICalcSolver.sol";
 
-// Subscription Manager Interface
-interface ISubscriptionManager {
-    enum SubscriptionTier { FREE, STUDY, STUDY_PLUS, EXPERT }
-    
-    struct Subscription {
-        address user;
-        SubscriptionTier tier;
-        uint256 startTime;
-        uint256 endTime;
-        uint256 creditsRemaining;
-        uint256 creditsUsedThisMonth;
-        uint256 lastCreditReset;
-    }
-    
-    function useCredit(address user) external returns (bool);
-    function recordSolverUsage(address solver) external;
-    function getUserSubscription(address user) external view returns (Subscription memory);
-    function hasPremiumAccess(address user) external view returns (bool);
-    function hasRefundGuarantee(address user) external view returns (bool);
-}
-
-// Bot Registry Interface
-interface IBotRegistry {
-    struct BotInfo {
-        address owner;
-        string name;
-        string description;
-        string webhookUrl;
-        bool isPremium;
-        uint8[] supportedTypes;
-        bool isActive;
-        uint256 totalSolved;
-        uint256 totalRating;
-        uint256 ratingCount;
-        uint256 monthlyUsage;
-        uint256 registeredAt;
-    }
-    
-    function getBotInfo(address botAddress) external view returns (BotInfo memory);
-    function incrementUsage(address botAddress) external;
-    function recordSolution(address botAddress, uint256 orderId) external;
-    function getEligibleSolvers(uint8 problemType) external view returns (address[] memory);
-    function platformBot() external view returns (address);
-}
-
-// Rating System Interface
-interface IRatingSystem {
-    function recordOrderSolver(uint256 orderId, address bot) external;
-}
-
 /**
  * @title CalcSolverCore
  * @notice Main coordinator contract for Ominis Calculus Solver Protocol

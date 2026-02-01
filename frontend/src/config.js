@@ -10,7 +10,7 @@ export const NETWORKS = {
         currency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
         usdc: '0x496e1D036D018C0930fBd199e30738efE0B4B753',
         contracts: {
-            core: '0x05465FEd0ba03A012c87Ac215c249EeA48aEcFd0',
+            core: '0x62E49387FFc45F67079C147Ee4D4bB7d710767F0',
             orderBook: '0x9D662B02759C89748A0Cd1e40dab7925b267f0bb',
             escrow: '0xCD4284e0Ee4245F84c327D861Fb72C03ac354F8F',
         }
