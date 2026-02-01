@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { PROBLEM_TYPES } from '../config';
 
 // Bot Server URL
-const BOT_SERVER_URL = 'http://172.19.37.93:5001';
+// Bot server URL (optional - for testing)
+const BOT_SERVER_URL = import.meta.env.VITE_BOT_SERVER_URL || 'http://localhost:5001';
 
 // Mock bot data (in production, fetch from BotRegistry contract)
 const MOCK_BOTS = [

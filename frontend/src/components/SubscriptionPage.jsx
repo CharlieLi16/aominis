@@ -42,7 +42,8 @@ const SUBSCRIPTION_TIERS = [
 ];
 
 // Bot Server URL
-const BOT_SERVER_URL = 'http://172.19.37.93:5001';
+// Bot server URL (optional - for testing)
+const BOT_SERVER_URL = import.meta.env.VITE_BOT_SERVER_URL || 'http://localhost:5001';
 
 function SubscriptionPage({ account, usdcContract, network }) {
     const [currentTier, setCurrentTier] = useState(null);

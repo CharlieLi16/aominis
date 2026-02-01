@@ -100,19 +100,20 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError }) 
             setTxHash(tx.hash);
             const receipt = await tx.wait();
             
-            // Store problem text on bot server for solvers to access
+            // Store problem text on platform API for solvers to access
             try {
-                await fetch('http://172.19.37.93:5001/problems', {
+                const apiUrl = import.meta.env.VITE_API_URL || '';
+                await fetch(`${apiUrl}/api/problems`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        hash: problemHash,
-                        text: problemText,
-                        type: problemType
+                        problemHash: problemHash,
+                        problemText: problemText,
+                        problemType: problemType
                     })
                 });
             } catch (e) {
-                console.log('Could not store problem on bot server:', e);
+                console.log('Could not store problem on API:', e);
             }
             
             // Get orderId from event logs

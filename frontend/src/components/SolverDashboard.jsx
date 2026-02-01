@@ -7,8 +7,9 @@ import { PROBLEM_TYPES, TIME_TIERS, ORDER_STATUS, NETWORKS } from '../config';
 const CORE_ADDRESS = NETWORKS.sepolia?.contracts?.core || '0x05465FEd0ba03A012c87Ac215c249EeA48aEcFd0';
 
 // Bot Server URL - WSL IP for Windows access
-// Change this to your WSL IP if localhost doesn't work
-const BOT_SERVER_URL = 'http://172.19.37.93:5001';
+// Bot server URL - for local solver testing
+// Solvers run their own bot_server.py and set this via environment variable
+const BOT_SERVER_URL = import.meta.env.VITE_BOT_SERVER_URL || 'http://localhost:5001';
 
 function SolverDashboard({ coreContract, usdcContract, account, network }) {
     const [orders, setOrders] = useState([]);

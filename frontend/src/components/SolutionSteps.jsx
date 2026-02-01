@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
 // Bot Server URL - same as SolverDashboard
-const BOT_SERVER_URL = 'http://172.19.37.93:5001';
+// Bot server URL for fetching solution steps
+const BOT_SERVER_URL = import.meta.env.VITE_BOT_SERVER_URL || 'http://localhost:5001';
 
 /**
  * SolutionSteps - Displays step-by-step solution for an order
