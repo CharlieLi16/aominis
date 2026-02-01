@@ -1440,9 +1440,15 @@ def receive_problem_webhook():
     problem_hash = data.get('problem_hash', '')
     problem_text = data.get('problem_text', '')
     problem_type = data.get('problem_type', 0)
-    submit_to_chain = data.get('submit_to_chain', True)
+    submit_to_chain_raw = data.get('submit_to_chain', True)
     
-    logger.info(f"[WEBHOOK] Received problem #{order_id} (type={problem_type}, submit={submit_to_chain})")
+    # Handle string "true"/"false" as well as boolean
+    if isinstance(submit_to_chain_raw, str):
+        submit_to_chain = submit_to_chain_raw.lower() in ('true', '1', 'yes')
+    else:
+        submit_to_chain = bool(submit_to_chain_raw)
+    
+    logger.info(f"[WEBHOOK] Received problem #{order_id} (type={problem_type}, submit={submit_to_chain}, raw={submit_to_chain_raw})")
     
     if not problem_text:
         return jsonify({
@@ -1493,74 +1499,105 @@ def receive_problem_webhook():
             'solved_at': datetime.now().isoformat()
         }
         
-        # Submit to chain if requested
-        if submit_to_chain:
-            sdk = init_sdk_if_needed()
-            if not sdk:
-                result['chain_error'] = 'SDK not available'
-                webhook_solution_status[order_id]['status'] = 'solved_not_submitted'
-                return jsonify(result)
-            
-            try:
-                # Generate salt for commit-reveal
-                salt = os.urandom(32)
-                
-                # Commit solution
-                webhook_solution_status[order_id]['status'] = 'committing'
-                logger.info(f"[WEBHOOK] Committing solution for #{order_id}...")
-                
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                commit_receipt = loop.run_until_complete(
-                    sdk.commit_solution(order_id, solution, salt)
-                )
-                result['commit_tx'] = commit_receipt.tx_hash
-                logger.info(f"[WEBHOOK] Commit TX: {commit_receipt.tx_hash}")
-                
-                if not commit_receipt.success:
-                    # Wait and check if commit actually succeeded
-                    for retry in range(3):
-                        loop.run_until_complete(asyncio.sleep(3))
-                        check_order = loop.run_until_complete(sdk.get_order(order_id))
-                        if check_order.status.name == 'COMMITTED':
-                            logger.info(f"[WEBHOOK] Commit confirmed after retry")
-                            break
-                    else:
-                        result['chain_error'] = 'Commit may have failed'
-                        webhook_solution_status[order_id]['status'] = 'commit_failed'
-                        loop.close()
-                        return jsonify(result)
-                
-                # Wait for commit to propagate
-                loop.run_until_complete(asyncio.sleep(2))
-                
-                # Reveal solution
-                webhook_solution_status[order_id]['status'] = 'revealing'
-                logger.info(f"[WEBHOOK] Revealing solution for #{order_id}...")
-                
-                reveal_receipt = loop.run_until_complete(
-                    sdk.reveal_solution(order_id, solution, salt)
-                )
-                result['reveal_tx'] = reveal_receipt.tx_hash
-                logger.info(f"[WEBHOOK] Reveal TX: {reveal_receipt.tx_hash}")
-                
-                loop.close()
-                
-                if reveal_receipt.success:
-                    webhook_solution_status[order_id]['status'] = 'completed'
-                    webhook_solution_status[order_id]['reveal_tx'] = reveal_receipt.tx_hash
-                    logger.info(f"[WEBHOOK] Order #{order_id} COMPLETED!")
-                    bot_state.stats['orders_solved'] += 1
-                else:
-                    webhook_solution_status[order_id]['status'] = 'reveal_failed'
-                    result['chain_error'] = 'Reveal may have failed'
-                    
-            except Exception as chain_err:
-                logger.error(f"[WEBHOOK] Chain submission error: {chain_err}")
-                result['chain_error'] = str(chain_err)
-                webhook_solution_status[order_id]['status'] = 'chain_error'
+        # Submit to chain in background thread (to avoid Flask timeout)
+        logger.info(f"[WEBHOOK] submit_to_chain={submit_to_chain} (type={type(submit_to_chain).__name__})")
         
+        if submit_to_chain:
+            # Start background thread for chain submission
+            import threading
+            
+            def submit_to_chain_background(order_id, solution, normalized_hash):
+                """Background task to commit and reveal solution on-chain"""
+                logger.info(f"[WEBHOOK-BG] Starting chain submission for #{order_id}...")
+                
+                try:
+                    sdk = init_sdk_if_needed()
+                    if not sdk:
+                        logger.error(f"[WEBHOOK-BG] SDK initialization failed!")
+                        webhook_solution_status[order_id]['status'] = 'sdk_failed'
+                        return
+                    
+                    logger.info(f"[WEBHOOK-BG] SDK ready, address: {sdk.address}")
+                    
+                    # Generate salt for commit-reveal
+                    salt = os.urandom(32)
+                    
+                    # Store salt for potential retry
+                    webhook_solution_status[order_id]['salt'] = salt.hex()
+                    
+                    # Commit solution
+                    webhook_solution_status[order_id]['status'] = 'committing'
+                    logger.info(f"[WEBHOOK-BG] Committing solution for #{order_id}...")
+                    
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    try:
+                        commit_receipt = loop.run_until_complete(
+                            sdk.commit_solution(order_id, solution, salt)
+                        )
+                        webhook_solution_status[order_id]['commit_tx'] = commit_receipt.tx_hash
+                        logger.info(f"[WEBHOOK-BG] Commit TX: {commit_receipt.tx_hash}")
+                        
+                        if not commit_receipt.success:
+                            # Wait and check if commit actually succeeded
+                            for retry in range(3):
+                                loop.run_until_complete(asyncio.sleep(3))
+                                check_order = loop.run_until_complete(sdk.get_order(order_id))
+                                if check_order.status.name == 'COMMITTED':
+                                    logger.info(f"[WEBHOOK-BG] Commit confirmed after retry")
+                                    break
+                            else:
+                                webhook_solution_status[order_id]['status'] = 'commit_failed'
+                                logger.error(f"[WEBHOOK-BG] Commit failed for #{order_id}")
+                                loop.close()
+                                return
+                        
+                        # Wait for commit to propagate
+                        logger.info(f"[WEBHOOK-BG] Waiting 3s before reveal...")
+                        loop.run_until_complete(asyncio.sleep(3))
+                        
+                        # Reveal solution
+                        webhook_solution_status[order_id]['status'] = 'revealing'
+                        logger.info(f"[WEBHOOK-BG] Revealing solution for #{order_id}...")
+                        
+                        reveal_receipt = loop.run_until_complete(
+                            sdk.reveal_solution(order_id, solution, salt)
+                        )
+                        webhook_solution_status[order_id]['reveal_tx'] = reveal_receipt.tx_hash
+                        logger.info(f"[WEBHOOK-BG] Reveal TX: {reveal_receipt.tx_hash}")
+                        
+                        if reveal_receipt.success:
+                            webhook_solution_status[order_id]['status'] = 'completed'
+                            logger.info(f"[WEBHOOK-BG] Order #{order_id} COMPLETED!")
+                            bot_state.stats['orders_solved'] += 1
+                        else:
+                            webhook_solution_status[order_id]['status'] = 'reveal_failed'
+                            logger.error(f"[WEBHOOK-BG] Reveal may have failed for #{order_id}")
+                    finally:
+                        loop.close()
+                        
+                except Exception as e:
+                    logger.error(f"[WEBHOOK-BG] Chain submission error for #{order_id}: {e}")
+                    import traceback
+                    logger.error(f"[WEBHOOK-BG] Traceback: {traceback.format_exc()}")
+                    webhook_solution_status[order_id]['status'] = 'chain_error'
+                    webhook_solution_status[order_id]['error'] = str(e)
+            
+            # Start background thread
+            webhook_solution_status[order_id]['status'] = 'submitting'
+            thread = threading.Thread(
+                target=submit_to_chain_background,
+                args=(order_id, solution, normalized_hash)
+            )
+            thread.daemon = True
+            thread.start()
+            logger.info(f"[WEBHOOK] Started background chain submission for #{order_id}")
+            result['chain_status'] = 'submitting_in_background'
+        else:
+            logger.info(f"[WEBHOOK] submit_to_chain is False, skipping chain submission")
+        
+        logger.info(f"[WEBHOOK] Returning result for #{order_id}")
         return jsonify(result)
         
     except Exception as e:
