@@ -77,6 +77,8 @@ export const ORDER_STATUS = {
 // Contract ABIs (minimal for frontend)
 export const CORE_ABI = [
     "function postProblem(bytes32 problemHash, uint8 problemType, uint8 timeTier) external returns (uint256)",
+    "function postProblemWithSubscription(bytes32 problemHash, uint8 problemType, uint8 target, address targetBot) external returns (uint256)",
+    "function isSubscriptionModeEnabled() external view returns (bool)",
     "function acceptOrder(uint256 orderId) external",
     "function commitSolution(uint256 orderId, bytes32 commitHash) external",
     "function revealSolution(uint256 orderId, string solution, bytes32 salt) external",
@@ -86,9 +88,11 @@ export const CORE_ABI = [
     "function cancelOrder(uint256 orderId) external",
     "function getOrder(uint256 orderId) external view returns (tuple(uint256 id, address issuer, bytes32 problemHash, uint8 problemType, uint8 timeTier, uint8 status, uint256 reward, uint256 createdAt, uint256 deadline, address solver))",
     "function getTierPrice(uint8 tier) external view returns (uint256)",
+    "function getOrderBot(uint256 orderId) external view returns (address)",
     "event ProblemPosted(uint256 indexed orderId, address indexed issuer, uint8 problemType, uint8 timeTier, uint256 reward)",
     "event OrderAccepted(uint256 indexed orderId, address indexed solver)",
     "event SolutionRevealed(uint256 indexed orderId, address indexed solver, string solution)",
+    "event OrderAssignedToBot(uint256 indexed orderId, address indexed bot, uint8 targetType)",
 ];
 
 export const USDC_ABI = [

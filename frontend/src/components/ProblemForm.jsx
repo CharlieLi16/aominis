@@ -2,7 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { PROBLEM_TYPES, TIME_TIERS, NETWORKS } from '../config';
 
-function ProblemForm({ account, coreContract, usdcContract, network, onError }) {
+// Solving method options
+const SOLVING_METHODS = [
+    { id: 0, name: 'Platform Bot', description: 'Fast AI solver', icon: '🤖' },
+    { id: 2, name: 'Problem Pool', description: 'Random solver', icon: '🎲' },
+    { id: 1, name: 'Choose Bot', description: 'Select specific bot', icon: '⭐', premium: true },
+];
+
+function ProblemForm({ account, coreContract, usdcContract, network, onError, subscription }) {
     const [problemText, setProblemText] = useState('');
     const [problemType, setProblemType] = useState(0);
     const [timeTier, setTimeTier] = useState(1); // Default to 5min
@@ -11,6 +18,29 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError }) 
     const [approving, setApproving] = useState(false);
     const [allowance, setAllowance] = useState('0');
     const [txHash, setTxHash] = useState(null);
+    
+    // Subscription mode state
+    const [useSubscription, setUseSubscription] = useState(true); // Default to subscription mode
+    const [solvingMethod, setSolvingMethod] = useState(0); // 0=Platform, 1=Specific, 2=Pool
+    const [selectedBot, setSelectedBot] = useState('0x0000000000000000000000000000000000000000');
+    const [subscriptionMode, setSubscriptionMode] = useState(false);
+    
+    // Check if subscription mode is enabled on contract
+    useEffect(() => {
+        const checkSubscriptionMode = async () => {
+            if (!coreContract) return;
+            try {
+                const enabled = await coreContract.isSubscriptionModeEnabled();
+                setSubscriptionMode(enabled);
+                setUseSubscription(enabled);
+            } catch (e) {
+                console.log('Subscription mode not available:', e);
+                setSubscriptionMode(false);
+                setUseSubscription(false);
+            }
+        };
+        checkSubscriptionMode();
+    }, [coreContract]);
 
     // Get price for selected tier
     useEffect(() => {
@@ -78,8 +108,8 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError }) 
             return;
         }
 
-        // Check allowance
-        if (parseFloat(allowance) < parseFloat(price)) {
+        // Check allowance for non-subscription mode
+        if (!useSubscription && parseFloat(allowance) < parseFloat(price)) {
             onError('Please approve USDC first');
             return;
         }
@@ -91,11 +121,24 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError }) 
             // Create problem hash from text
             const problemHash = ethers.keccak256(ethers.toUtf8Bytes(problemText));
             
-            const tx = await coreContract.postProblem(
-                problemHash,
-                problemType,
-                timeTier
-            );
+            let tx;
+            
+            if (useSubscription && subscriptionMode) {
+                // Subscription mode - use credits
+                tx = await coreContract.postProblemWithSubscription(
+                    problemHash,
+                    problemType,
+                    solvingMethod,
+                    selectedBot
+                );
+            } else {
+                // Classic mode - pay per problem
+                tx = await coreContract.postProblem(
+                    problemHash,
+                    problemType,
+                    timeTier
+                );
+            }
             
             setTxHash(tx.hash);
             const receipt = await tx.wait();
@@ -132,7 +175,8 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError }) 
                             type: problemType,
                             tier: timeTier,
                             hash: problemHash,
-                            timestamp: Date.now()
+                            timestamp: Date.now(),
+                            solvingMethod: useSubscription ? solvingMethod : null
                         };
                         localStorage.setItem('ominis_problems', JSON.stringify(savedProblems));
                         break;
@@ -201,37 +245,113 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError }) 
                     </p>
                 </div>
 
-                {/* Time Tier */}
-                <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-300 mb-3">
-                        Time Limit (faster = more expensive)
-                    </label>
-                    <div className="grid grid-cols-4 gap-2">
-                        {TIME_TIERS.map(tier => (
+                {/* Mode Toggle (if subscription is available) */}
+                {subscriptionMode && (
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-gray-300 mb-3">Payment Mode</label>
+                        <div className="grid grid-cols-2 gap-2">
                             <button
-                                key={tier.id}
                                 type="button"
-                                onClick={() => setTimeTier(tier.id)}
+                                onClick={() => setUseSubscription(true)}
                                 className={`p-3 rounded-xl text-center transition-all ${
-                                    timeTier === tier.id
-                                        ? 'bg-purple-500/20 border-2 border-purple-500/50 text-purple-400'
+                                    useSubscription
+                                        ? 'bg-green-500/20 border-2 border-green-500/50 text-green-400'
                                         : 'bg-dark-800/50 border border-dark-600 text-gray-400 hover:border-dark-500'
                                 }`}
                             >
-                                <div className="text-lg font-bold">{tier.name}</div>
-                                <div className="text-xs opacity-70">{tier.description}</div>
+                                <div className="text-lg">💎</div>
+                                <div className="text-sm font-medium">Use Credits</div>
+                                <div className="text-xs opacity-70">1 credit per question</div>
                             </button>
-                        ))}
+                            <button
+                                type="button"
+                                onClick={() => setUseSubscription(false)}
+                                className={`p-3 rounded-xl text-center transition-all ${
+                                    !useSubscription
+                                        ? 'bg-yellow-500/20 border-2 border-yellow-500/50 text-yellow-400'
+                                        : 'bg-dark-800/50 border border-dark-600 text-gray-400 hover:border-dark-500'
+                                }`}
+                            >
+                                <div className="text-lg">💵</div>
+                                <div className="text-sm font-medium">Pay Per Question</div>
+                                <div className="text-xs opacity-70">Classic mode</div>
+                            </button>
+                        </div>
                     </div>
-                </div>
+                )}
 
-                {/* Price Display */}
+                {/* Solving Method (Subscription Mode) */}
+                {useSubscription && subscriptionMode && (
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-gray-300 mb-3">Solving Method</label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {SOLVING_METHODS.map(method => (
+                                <button
+                                    key={method.id}
+                                    type="button"
+                                    onClick={() => setSolvingMethod(method.id)}
+                                    disabled={method.premium && subscription?.tier < 2}
+                                    className={`p-3 rounded-xl text-center transition-all ${
+                                        solvingMethod === method.id
+                                            ? 'bg-purple-500/20 border-2 border-purple-500/50 text-purple-400'
+                                            : method.premium && subscription?.tier < 2
+                                                ? 'bg-dark-900/50 border border-dark-700 text-gray-600 cursor-not-allowed'
+                                                : 'bg-dark-800/50 border border-dark-600 text-gray-400 hover:border-dark-500'
+                                    }`}
+                                >
+                                    <div className="text-xl mb-1">{method.icon}</div>
+                                    <div className="text-sm font-medium">{method.name}</div>
+                                    <div className="text-xs opacity-70">{method.description}</div>
+                                    {method.premium && subscription?.tier < 2 && (
+                                        <div className="text-xs text-purple-400 mt-1">Study+ required</div>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Time Tier (Classic Mode Only) */}
+                {!useSubscription && (
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-gray-300 mb-3">
+                            Time Limit (faster = more expensive)
+                        </label>
+                        <div className="grid grid-cols-4 gap-2">
+                            {TIME_TIERS.map(tier => (
+                                <button
+                                    key={tier.id}
+                                    type="button"
+                                    onClick={() => setTimeTier(tier.id)}
+                                    className={`p-3 rounded-xl text-center transition-all ${
+                                        timeTier === tier.id
+                                            ? 'bg-purple-500/20 border-2 border-purple-500/50 text-purple-400'
+                                            : 'bg-dark-800/50 border border-dark-600 text-gray-400 hover:border-dark-500'
+                                    }`}
+                                >
+                                    <div className="text-lg font-bold">{tier.name}</div>
+                                    <div className="text-xs opacity-70">{tier.description}</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Price/Cost Display */}
                 <div className="mb-6 p-4 bg-dark-800/50 rounded-xl border border-dark-600">
                     <div className="flex justify-between items-center">
-                        <span className="text-gray-400">Price:</span>
-                        <span className="text-2xl font-bold text-green-400">
-                            ${parseFloat(price).toFixed(2)} USDC
+                        <span className="text-gray-400">
+                            {useSubscription ? 'Cost:' : 'Price:'}
                         </span>
+                        {useSubscription ? (
+                            <span className="text-2xl font-bold text-green-400">
+                                1 Credit
+                            </span>
+                        ) : (
+                            <span className="text-2xl font-bold text-green-400">
+                                ${parseFloat(price).toFixed(2)} USDC
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -240,7 +360,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError }) 
                     <div className="text-center text-gray-400 py-4">
                         Connect wallet to submit problems
                     </div>
-                ) : needsApproval ? (
+                ) : !useSubscription && needsApproval ? (
                     <button
                         type="button"
                         onClick={handleApprove}
@@ -262,6 +382,13 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError }) 
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                                 </svg>
                                 Submitting...
+                            </>
+                        ) : useSubscription ? (
+                            <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                </svg>
+                                Submit (1 Credit)
                             </>
                         ) : (
                             <>
