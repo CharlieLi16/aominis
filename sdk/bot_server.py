@@ -1517,14 +1517,41 @@ def receive_problem_webhook():
                 salt = os.urandom(32)
                 webhook_solution_status[order_id]['salt'] = salt.hex()
                 
-                # Commit solution
-                webhook_solution_status[order_id]['status'] = 'committing'
-                logger.info(f"[WEBHOOK] Committing solution for #{order_id}...")
-                
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
                 try:
+                    # First check order status and accept if needed
+                    order = loop.run_until_complete(sdk.get_order(order_id))
+                    logger.info(f"[WEBHOOK] Order #{order_id} status: {order.status.name}")
+                    
+                    if order.status.name in ['POSTED', 'ASSIGNED']:
+                        # Need to accept the order first
+                        webhook_solution_status[order_id]['status'] = 'accepting'
+                        logger.info(f"[WEBHOOK] Accepting order #{order_id}...")
+                        
+                        accept_receipt = loop.run_until_complete(
+                            sdk.accept_order(order_id)
+                        )
+                        logger.info(f"[WEBHOOK] Accept TX: {accept_receipt.tx_hash}, success={accept_receipt.success}")
+                        
+                        if not accept_receipt.success:
+                            # Wait and check if it succeeded anyway
+                            loop.run_until_complete(asyncio.sleep(2))
+                            order = loop.run_until_complete(sdk.get_order(order_id))
+                            if order.status.name != 'ACCEPTED':
+                                result['chain_error'] = f'Accept failed, status={order.status.name}'
+                                webhook_solution_status[order_id]['status'] = 'accept_failed'
+                                loop.close()
+                                return jsonify(result)
+                        
+                        # Wait for accept to propagate
+                        loop.run_until_complete(asyncio.sleep(2))
+                    
+                    # Commit solution
+                    webhook_solution_status[order_id]['status'] = 'committing'
+                    logger.info(f"[WEBHOOK] Committing solution for #{order_id}...")
+                    
                     commit_receipt = loop.run_until_complete(
                         sdk.commit_solution(order_id, solution, salt)
                     )
