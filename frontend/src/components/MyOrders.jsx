@@ -4,13 +4,13 @@ import { PROBLEM_TYPES, TIME_TIERS, ORDER_STATUS } from '../config';
 import SolutionSteps from './SolutionSteps';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
+const BOT_SERVER_URL = import.meta.env.VITE_BOT_SERVER_URL || 'http://localhost:5001';
 
 function MyOrders({ coreContract, account }) {
     const [orders, setOrders] = useState([]);
     const [solutions, setSolutions] = useState({}); // {orderId: solution}
     const [problems, setProblems] = useState({}); // {orderId: {text, type, ...}}
     const [loading, setLoading] = useState(false);
-    const [tab, setTab] = useState('issued'); // issued, solving
 
     // Load saved problems from localStorage first, then fetch from API
     useEffect(() => {
@@ -92,27 +92,44 @@ function MyOrders({ coreContract, account }) {
         setSolutions(solutionMap);
     };
 
-    // Fetch problem text from API for orders not in localStorage
+    // Fetch problem text from Bot Server or API
     const fetchProblemText = async (orderId, problemHash) => {
         // Skip if already have this problem
         if (problems[orderId]) return;
 
+        // Try Bot Server first (has persistent file storage)
         try {
-            // Try to fetch from API by hash (use query param format)
+            const botResponse = await fetch(`${BOT_SERVER_URL}/problems/${problemHash}`);
+            if (botResponse.ok) {
+                const data = await botResponse.json();
+                if (data.success && data.problem?.text) {
+                    setProblems(prev => {
+                        const updated = { ...prev, [orderId]: { text: data.problem.text } };
+                        localStorage.setItem('ominis_problems', JSON.stringify(updated));
+                        return updated;
+                    });
+                    return;
+                }
+            }
+        } catch (e) {
+            // Bot server may not be running, try API fallback
+        }
+
+        // Fallback to Vercel API
+        try {
             const response = await fetch(`${API_URL}/api/problems?hash=${problemHash}`);
             if (response.ok) {
                 const data = await response.json();
                 if (data.success && data.text) {
                     setProblems(prev => {
                         const updated = { ...prev, [orderId]: { text: data.text } };
-                        // Also save to localStorage
                         localStorage.setItem('ominis_problems', JSON.stringify(updated));
                         return updated;
                     });
                 }
             }
         } catch (e) {
-            console.log(`Could not fetch problem ${orderId} from API:`, e);
+            // Silent fail - problem text is optional
         }
     };
 

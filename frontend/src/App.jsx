@@ -22,7 +22,6 @@ function App() {
     // Contract state
     const [coreContract, setCoreContract] = useState(null);
     const [usdcContract, setUsdcContract] = useState(null);
-    const [subscriptionContract, setSubscriptionContract] = useState(null);
     const [usdcBalance, setUsdcBalance] = useState('0');
     
     // UI state - check URL for initial tab
@@ -179,17 +178,14 @@ function App() {
                 }
             }
             
-            // Setup SubscriptionManager contract
+            // Fetch subscription status from SubscriptionManager
             if (networkConfig.contracts.subscriptionManager) {
-                const subMgr = new ethers.Contract(
-                    networkConfig.contracts.subscriptionManager,
-                    SUBSCRIPTION_MANAGER_ABI,
-                    signer
-                );
-                setSubscriptionContract(subMgr);
-                
-                // Fetch subscription status from chain
                 try {
+                    const subMgr = new ethers.Contract(
+                        networkConfig.contracts.subscriptionManager,
+                        SUBSCRIPTION_MANAGER_ABI,
+                        signer
+                    );
                     const userAddress = await signer.getAddress();
                     const subData = await subMgr.getUserSubscription(userAddress);
                     const credits = await subMgr.getCreditsRemaining(userAddress);
@@ -204,7 +200,6 @@ function App() {
                     console.log('Subscription loaded:', { tier: Number(subData.tier), credits: Number(credits) });
                 } catch (e) {
                     console.log('Could not fetch subscription:', e);
-                    // Default to free tier
                     setSubscription({ tier: 0, creditsRemaining: 0 });
                     setCreditsRemaining(0);
                 }

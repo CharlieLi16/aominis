@@ -20,6 +20,8 @@ import json
 import asyncio
 import threading
 import logging
+import re
+import hashlib
 from datetime import datetime
 from typing import Optional
 from flask import Flask, jsonify, request
@@ -186,8 +188,6 @@ ANSWER: [final answer only]"""
 
 def parse_gpt_solution(content: str) -> dict:
     """Parse GPT response into answer and steps."""
-    import re
-    
     result = {'answer': '', 'steps': []}
     
     # Extract answer
@@ -420,8 +420,7 @@ def bot_loop():
                             continue
                         
                         # Generate salt and commit manually (so we can retry reveal)
-                        import os as os_module
-                        salt = os_module.urandom(32)
+                        salt = os.urandom(32)
                         
                         bot_state.add_log(f'[BOT] Step 1: Committing solution...', 'info')
                         try:
@@ -431,15 +430,12 @@ def bot_loop():
                             
                             bot_state.add_log(f'[BOT] Commit TX: {commit_receipt.tx_hash}', 'info')
                             
-                            import asyncio as async_module
-                            import time as time_module
-                            
                             # Check commit status with retries (blockchain propagation can be slow)
                             committed = commit_receipt.success
                             if not committed:
                                 bot_state.add_log(f'[BOT] Commit receipt shows failure, waiting and checking...', 'warning')
                                 for retry in range(5):
-                                    loop.run_until_complete(async_module.sleep(3))
+                                    loop.run_until_complete(asyncio.sleep(3))
                                     check_order = loop.run_until_complete(sdk.get_order(order.id))
                                     bot_state.add_log(f'[BOT] Retry {retry+1}/5: Order status = {check_order.status.name}', 'info')
                                     if check_order.status.name == 'COMMITTED':
@@ -453,7 +449,7 @@ def bot_loop():
                             else:
                                 bot_state.add_log(f'[BOT] Commit SUCCESS!', 'success')
                                 # Wait a bit for state to propagate
-                                loop.run_until_complete(async_module.sleep(3))
+                                loop.run_until_complete(asyncio.sleep(3))
                             
                             bot_state.add_log(f'[BOT] Step 2: Revealing solution...', 'info')
                             reveal_receipt = loop.run_until_complete(
@@ -1189,8 +1185,6 @@ def save_solution_storage():
 
 def store_solution_data(order_id: int, problem_hash: str, solution_data: dict):
     """Store solution with steps for an order"""
-    import hashlib
-    
     # Create a hash of the steps for verification
     steps_str = json.dumps(solution_data.get('steps', []), sort_keys=True)
     steps_hash = '0x' + hashlib.sha256(steps_str.encode()).hexdigest()

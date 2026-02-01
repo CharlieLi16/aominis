@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { NETWORKS, SUBSCRIPTION_MANAGER_ABI, USDC_ABI } from '../config';
+import { NETWORKS, SUBSCRIPTION_MANAGER_ABI } from '../config';
 
 // Subscription tier configurations
 const SUBSCRIPTION_TIERS = [
