@@ -493,6 +493,308 @@ def bot_loop():
     bot_state.add_log('[BOT] Bot stopped.', 'warning')
     bot_state.running = False
 
+# ========== Auto-Solver for Subscription Mode ==========
+# Monitors OrderAssignedToBot events and automatically solves assigned problems
+
+from web3 import Web3
+
+# Core contract ABI extension for OrderAssignedToBot event
+CORE_EXTENDED_ABI = [
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "name": "orderId", "type": "uint256"},
+            {"indexed": True, "name": "bot", "type": "address"},
+            {"indexed": False, "name": "targetType", "type": "uint8"}
+        ],
+        "name": "OrderAssignedToBot",
+        "type": "event"
+    },
+    {
+        "inputs": [{"name": "orderId", "type": "uint256"}],
+        "name": "getOrderBot",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]
+
+
+class AutoSolver:
+    """
+    Monitors OrderAssignedToBot events and automatically solves assigned problems.
+    
+    In subscription mode, problems are assigned directly to bots without needing
+    to call acceptOrder. The bot just needs to commit and reveal the solution.
+    """
+    
+    def __init__(self, sdk, bot_state_ref):
+        self.sdk = sdk
+        self.bot_state = bot_state_ref
+        self.bot_address = sdk.address
+        self.processed_orders = set()
+        self.running = False
+        self.w3 = sdk.w3
+        
+        # Initialize Core contract with extended ABI
+        core_address = os.getenv('CORE_ADDRESS')
+        if core_address:
+            self.core_contract = self.w3.eth.contract(
+                address=Web3.to_checksum_address(core_address),
+                abi=CORE_EXTENDED_ABI
+            )
+        else:
+            self.core_contract = None
+        
+        self.last_block = 0
+    
+    def log(self, message: str, level: str = 'info'):
+        """Log message through bot_state"""
+        self.bot_state.add_log(f'[AUTO-SOLVER] {message}', level)
+    
+    def get_order_bot(self, order_id: int) -> str:
+        """Get the bot assigned to an order"""
+        if not self.core_contract:
+            return None
+        try:
+            return self.core_contract.functions.getOrderBot(order_id).call()
+        except Exception as e:
+            self.log(f'Error getting order bot: {e}', 'error')
+            return None
+    
+    def get_assigned_orders_from_events(self, from_block: int = None) -> list:
+        """
+        Get orders assigned to this bot by scanning OrderAssignedToBot events.
+        Returns list of order IDs assigned to this bot.
+        """
+        if not self.core_contract:
+            return []
+        
+        try:
+            if from_block is None:
+                # Get recent blocks only (last ~100 blocks)
+                current_block = self.w3.eth.block_number
+                from_block = max(0, current_block - 100)
+            
+            # Create event filter for OrderAssignedToBot events where bot == our address
+            event_filter = self.core_contract.events.OrderAssignedToBot.create_filter(
+                fromBlock=from_block,
+                argument_filters={'bot': self.bot_address}
+            )
+            
+            events = event_filter.get_all_entries()
+            order_ids = [event.args.orderId for event in events]
+            
+            if order_ids:
+                self.log(f'Found {len(order_ids)} assigned orders from events: {order_ids}', 'info')
+            
+            return order_ids
+            
+        except Exception as e:
+            self.log(f'Error getting assigned orders from events: {e}', 'error')
+            return []
+    
+    def check_order_needs_solving(self, order_id: int) -> dict:
+        """
+        Check if an order needs solving by this bot.
+        Returns order info dict if needs solving, None otherwise.
+        """
+        try:
+            # Skip if already processed
+            if order_id in self.processed_orders:
+                return None
+            
+            # Get order details
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            order = loop.run_until_complete(self.sdk.get_order(order_id))
+            loop.close()
+            
+            # Check if assigned to us
+            assigned_bot = self.get_order_bot(order_id)
+            if not assigned_bot or assigned_bot.lower() != self.bot_address.lower():
+                return None
+            
+            # Check order status - we can solve if OPEN (subscription mode doesn't need accept)
+            # or ACCEPTED (if we somehow accepted it)
+            if order.status.name not in ['OPEN', 'ACCEPTED']:
+                self.log(f'Order #{order_id} status is {order.status.name}, skipping', 'info')
+                return None
+            
+            # Check time remaining
+            if order.time_remaining < 30:
+                self.log(f'Order #{order_id} has only {order.time_remaining}s remaining, skipping', 'warning')
+                return None
+            
+            return {
+                'order': order,
+                'assigned_bot': assigned_bot
+            }
+            
+        except Exception as e:
+            self.log(f'Error checking order #{order_id}: {e}', 'error')
+            return None
+    
+    def solve_and_submit(self, order_id: int, order) -> bool:
+        """
+        Solve the problem and submit solution (commit + reveal).
+        Returns True if successful.
+        """
+        try:
+            self.log(f'Solving order #{order_id} ({order.problem_type.name})...', 'info')
+            
+            # Get problem hash
+            raw_hash = order.problem_hash.hex().lower()
+            problem_hash = '0x' + raw_hash if not raw_hash.startswith('0x') else raw_hash
+            
+            # Try to get problem text from storage
+            problem_text = None
+            if problem_hash in problem_storage:
+                problem_text = problem_storage[problem_hash].get('text')
+                self.log(f'Found problem text: {problem_text[:50]}...', 'info')
+            else:
+                self.log(f'Problem text not found for hash {problem_hash[:18]}...', 'warning')
+            
+            # Solve the problem
+            self.log(f'Solving with {"GPT" if os.getenv("OPENAI_API_KEY") else "fallback"}...', 'info')
+            solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text)
+            solution = solution_data['answer']
+            steps = solution_data.get('steps', [])
+            self.log(f'Solution: {solution} ({len(steps)} steps)', 'success')
+            
+            # Store solution for frontend
+            store_solution_data(order_id, problem_hash, solution_data)
+            
+            # Generate salt for commit-reveal
+            salt = os.urandom(32)
+            
+            # Create async loop for blockchain operations
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Step 1: Commit solution
+                self.log(f'Committing solution for order #{order_id}...', 'info')
+                commit_receipt = loop.run_until_complete(
+                    self.sdk.commit_solution(order_id, solution, salt)
+                )
+                self.log(f'Commit TX: {commit_receipt.tx_hash}', 'info')
+                
+                if not commit_receipt.success:
+                    # Wait and check if commit actually succeeded
+                    for retry in range(3):
+                        loop.run_until_complete(asyncio.sleep(3))
+                        check_order = loop.run_until_complete(self.sdk.get_order(order_id))
+                        if check_order.status.name == 'COMMITTED':
+                            self.log(f'Commit confirmed after retry', 'success')
+                            break
+                    else:
+                        self.log(f'Commit failed for order #{order_id}', 'error')
+                        return False
+                
+                # Wait for commit to propagate
+                loop.run_until_complete(asyncio.sleep(3))
+                
+                # Step 2: Reveal solution
+                self.log(f'Revealing solution for order #{order_id}...', 'info')
+                reveal_receipt = loop.run_until_complete(
+                    self.sdk.reveal_solution(order_id, solution, salt)
+                )
+                
+                if reveal_receipt.success:
+                    self.log(f'Order #{order_id} SOLVED! TX: {reveal_receipt.tx_hash[:16]}...', 'success')
+                    self.bot_state.stats['orders_solved'] += 1
+                    return True
+                else:
+                    self.log(f'Reveal failed for order #{order_id}: {reveal_receipt.tx_hash}', 'error')
+                    return False
+                    
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            self.log(f'Error solving order #{order_id}: {e}', 'error')
+            return False
+    
+    def run_once(self):
+        """Run one iteration of checking and solving assigned orders"""
+        if not self.core_contract:
+            self.log('Core contract not initialized', 'error')
+            return
+        
+        try:
+            # Get assigned orders from recent events
+            order_ids = self.get_assigned_orders_from_events()
+            
+            for order_id in order_ids:
+                if not self.running:
+                    break
+                
+                # Check if order needs solving
+                order_info = self.check_order_needs_solving(order_id)
+                if not order_info:
+                    continue
+                
+                # Mark as processing
+                self.processed_orders.add(order_id)
+                self.bot_state.active_orders.add(order_id)
+                
+                try:
+                    # Solve and submit
+                    success = self.solve_and_submit(order_id, order_info['order'])
+                    if success:
+                        self.log(f'Successfully solved order #{order_id}', 'success')
+                finally:
+                    self.bot_state.active_orders.discard(order_id)
+                    
+        except Exception as e:
+            self.log(f'Error in auto-solver run: {e}', 'error')
+    
+    def run_loop(self):
+        """Main loop for auto-solver"""
+        self.log('Starting auto-solver loop...', 'info')
+        self.log(f'Bot address: {self.bot_address}', 'info')
+        self.running = True
+        
+        while self.running and not self.bot_state.stop_event.is_set():
+            try:
+                self.run_once()
+            except Exception as e:
+                self.log(f'Error in auto-solver loop: {e}', 'error')
+            
+            # Wait before next iteration
+            self.bot_state.stop_event.wait(self.bot_state.config['poll_interval'])
+        
+        self.log('Auto-solver stopped.', 'warning')
+        self.running = False
+
+
+# Global auto-solver instance
+auto_solver: Optional[AutoSolver] = None
+
+
+def start_auto_solver():
+    """Start the auto-solver in a separate thread"""
+    global auto_solver
+    
+    if not bot_state.sdk:
+        logger.error("Cannot start auto-solver: SDK not initialized")
+        return False
+    
+    if auto_solver and auto_solver.running:
+        logger.warning("Auto-solver is already running")
+        return False
+    
+    auto_solver = AutoSolver(bot_state.sdk, bot_state)
+    
+    # Run in a separate thread
+    solver_thread = threading.Thread(target=auto_solver.run_loop, daemon=True)
+    solver_thread.start()
+    
+    logger.info("Auto-solver started")
+    return True
+
+
 # ========== API Endpoints ==========
 
 @app.route('/status', methods=['GET'])
@@ -503,29 +805,48 @@ def get_status():
         'address': bot_state.sdk.address if bot_state.sdk else None,
         'stats': bot_state.stats,
         'active_orders': list(bot_state.active_orders),
+        'auto_solver_running': auto_solver.running if auto_solver else False,
+        'auto_solver_processed': len(auto_solver.processed_orders) if auto_solver else 0,
     })
 
 @app.route('/start', methods=['POST'])
 def start_bot():
-    """Start the bot"""
+    """Start the bot (both regular bot loop and auto-solver)"""
     if bot_state.running:
         return jsonify({'success': False, 'error': 'Bot is already running'})
     
     bot_state.running = True
     bot_state.stop_event.clear()
+    
+    # Start regular bot loop
     bot_state.bot_thread = threading.Thread(target=bot_loop, daemon=True)
     bot_state.bot_thread.start()
     
-    return jsonify({'success': True, 'message': 'Bot started'})
+    # Start auto-solver after a short delay (SDK needs to initialize first)
+    def delayed_auto_solver_start():
+        import time
+        time.sleep(3)  # Wait for SDK initialization
+        if bot_state.sdk:
+            start_auto_solver()
+    
+    auto_solver_thread = threading.Thread(target=delayed_auto_solver_start, daemon=True)
+    auto_solver_thread.start()
+    
+    return jsonify({'success': True, 'message': 'Bot started (with auto-solver)'})
 
 @app.route('/stop', methods=['POST'])
 def stop_bot():
-    """Stop the bot"""
+    """Stop the bot (both regular bot loop and auto-solver)"""
     if not bot_state.running:
         return jsonify({'success': False, 'error': 'Bot is not running'})
     
     bot_state.stop_event.set()
     bot_state.running = False
+    
+    # Stop auto-solver
+    global auto_solver
+    if auto_solver:
+        auto_solver.running = False
     
     return jsonify({'success': True, 'message': 'Bot stopping...'})
 
@@ -593,6 +914,166 @@ def gpt_status():
         'configured': has_key,
         'model': 'gpt-4o-mini' if has_key else None
     })
+
+
+# ========== Auto-Solver API Endpoints ==========
+
+@app.route('/assigned-orders', methods=['GET'])
+def get_assigned_orders():
+    """
+    Get orders assigned to this bot (subscription mode).
+    
+    Query params:
+        - from_block: Start block number (default: recent 1000 blocks)
+        - include_processed: Include already processed orders (default: false)
+    """
+    if not auto_solver:
+        return jsonify({
+            'success': False,
+            'error': 'Auto-solver not initialized. Start the bot first.'
+        })
+    
+    from_block = request.args.get('from_block', type=int)
+    include_processed = request.args.get('include_processed', 'false').lower() == 'true'
+    
+    try:
+        # Get assigned orders from events
+        order_ids = auto_solver.get_assigned_orders_from_events(from_block)
+        
+        # Filter out processed orders if requested
+        if not include_processed:
+            order_ids = [oid for oid in order_ids if oid not in auto_solver.processed_orders]
+        
+        # Get order details for each
+        orders_info = []
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        for order_id in order_ids:
+            try:
+                order = loop.run_until_complete(auto_solver.sdk.get_order(order_id))
+                orders_info.append({
+                    'order_id': order_id,
+                    'problem_type': order.problem_type.name,
+                    'status': order.status.name,
+                    'time_remaining': order.time_remaining,
+                    'processed': order_id in auto_solver.processed_orders
+                })
+            except Exception as e:
+                orders_info.append({
+                    'order_id': order_id,
+                    'error': str(e)
+                })
+        
+        loop.close()
+        
+        return jsonify({
+            'success': True,
+            'bot_address': auto_solver.bot_address,
+            'total_assigned': len(order_ids),
+            'total_processed': len(auto_solver.processed_orders),
+            'orders': orders_info
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/solve-assigned', methods=['POST'])
+def solve_assigned_order():
+    """
+    Manually trigger solving for an assigned order.
+    
+    Request body:
+        - order_id: int (required)
+    """
+    if not auto_solver:
+        return jsonify({
+            'success': False,
+            'error': 'Auto-solver not initialized. Start the bot first.'
+        })
+    
+    data = request.get_json() or {}
+    order_id = data.get('order_id')
+    
+    if order_id is None:
+        return jsonify({
+            'success': False,
+            'error': 'order_id is required'
+        })
+    
+    try:
+        # Check if order is assigned to us
+        order_info = auto_solver.check_order_needs_solving(order_id)
+        
+        if not order_info:
+            return jsonify({
+                'success': False,
+                'error': f'Order #{order_id} is not assigned to this bot or already processed'
+            })
+        
+        # Solve and submit
+        success = auto_solver.solve_and_submit(order_id, order_info['order'])
+        
+        return jsonify({
+            'success': success,
+            'order_id': order_id,
+            'message': 'Solution submitted successfully!' if success else 'Failed to submit solution'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/auto-solver/status', methods=['GET'])
+def get_auto_solver_status():
+    """Get detailed auto-solver status"""
+    if not auto_solver:
+        return jsonify({
+            'success': True,
+            'initialized': False,
+            'running': False
+        })
+    
+    return jsonify({
+        'success': True,
+        'initialized': True,
+        'running': auto_solver.running,
+        'bot_address': auto_solver.bot_address,
+        'processed_count': len(auto_solver.processed_orders),
+        'processed_orders': list(auto_solver.processed_orders),
+        'core_contract_set': auto_solver.core_contract is not None
+    })
+
+
+@app.route('/auto-solver/run-once', methods=['POST'])
+def run_auto_solver_once():
+    """Manually trigger one iteration of the auto-solver"""
+    if not auto_solver:
+        return jsonify({
+            'success': False,
+            'error': 'Auto-solver not initialized. Start the bot first.'
+        })
+    
+    try:
+        auto_solver.run_once()
+        return jsonify({
+            'success': True,
+            'message': 'Auto-solver iteration completed',
+            'processed_count': len(auto_solver.processed_orders)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
 
 @app.route('/solve', methods=['POST'])
 def solve_endpoint():

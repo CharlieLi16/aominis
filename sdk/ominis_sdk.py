@@ -159,6 +159,23 @@ class OminisSDK:
             ],
             "name": "OrderAccepted",
             "type": "event"
+        },
+        {
+            "anonymous": False,
+            "inputs": [
+                {"indexed": True, "name": "orderId", "type": "uint256"},
+                {"indexed": True, "name": "bot", "type": "address"},
+                {"indexed": False, "name": "targetType", "type": "uint8"}
+            ],
+            "name": "OrderAssignedToBot",
+            "type": "event"
+        },
+        {
+            "inputs": [{"name": "orderId", "type": "uint256"}],
+            "name": "getOrderBot",
+            "outputs": [{"name": "", "type": "address"}],
+            "stateMutability": "view",
+            "type": "function"
         }
     ]
     
@@ -518,6 +535,109 @@ class OminisSDK:
             await asyncio.sleep(1)
         
         return False
+    
+    # ========== Subscription Mode / Bot Assignment ==========
+    
+    def get_order_bot(self, order_id: int) -> Optional[str]:
+        """
+        Get the bot assigned to an order (subscription mode).
+        
+        Args:
+            order_id: The order ID
+            
+        Returns:
+            Bot address if assigned, None otherwise
+        """
+        try:
+            bot_address = self.core.functions.getOrderBot(order_id).call()
+            # Check if it's the zero address
+            if bot_address == "0x" + "0" * 40:
+                return None
+            return bot_address
+        except Exception:
+            return None
+    
+    async def listen_assigned_orders(
+        self, 
+        bot_address: str = None,
+        poll_interval: float = 2.0,
+        from_block: int = None
+    ) -> AsyncIterator[int]:
+        """
+        Listen for orders assigned to a specific bot (subscription mode).
+        
+        In subscription mode, users can assign problems directly to bots
+        via postProblemWithSubscription, triggering OrderAssignedToBot events.
+        
+        Args:
+            bot_address: Bot address to filter for (defaults to self.address)
+            poll_interval: Seconds between polls
+            from_block: Block number to start from (defaults to 'latest')
+            
+        Yields:
+            Order IDs assigned to the bot
+        """
+        if bot_address is None:
+            bot_address = self.address
+        
+        bot_address = Web3.to_checksum_address(bot_address)
+        
+        # Create event filter
+        if from_block is None:
+            from_block = 'latest'
+        
+        event_filter = self.core.events.OrderAssignedToBot.create_filter(
+            fromBlock=from_block,
+            argument_filters={'bot': bot_address}
+        )
+        
+        while True:
+            try:
+                events = event_filter.get_new_entries()
+                for event in events:
+                    yield event.args.orderId
+            except Exception as e:
+                print(f"Error polling assigned orders: {e}")
+            
+            await asyncio.sleep(poll_interval)
+    
+    def get_assigned_orders_batch(
+        self, 
+        bot_address: str = None,
+        from_block: int = 0,
+        to_block: int = None
+    ) -> List[int]:
+        """
+        Get all orders assigned to a bot in a block range (batch query).
+        
+        Args:
+            bot_address: Bot address to filter for (defaults to self.address)
+            from_block: Start block (default 0)
+            to_block: End block (default latest)
+            
+        Returns:
+            List of order IDs assigned to the bot
+        """
+        if bot_address is None:
+            bot_address = self.address
+        
+        bot_address = Web3.to_checksum_address(bot_address)
+        
+        if to_block is None:
+            to_block = self.w3.eth.block_number
+        
+        try:
+            event_filter = self.core.events.OrderAssignedToBot.create_filter(
+                fromBlock=from_block,
+                toBlock=to_block,
+                argument_filters={'bot': bot_address}
+            )
+            
+            events = event_filter.get_all_entries()
+            return [event.args.orderId for event in events]
+        except Exception as e:
+            print(f"Error getting assigned orders: {e}")
+            return []
     
     # ========== Utilities ==========
     
