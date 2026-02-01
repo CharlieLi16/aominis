@@ -126,14 +126,17 @@ def solve_with_gpt(problem_type: int, problem_text: str = None) -> dict:
     """
     client = get_openai_client()
     if not client:
-        fallback = solve_problem_fallback(problem_type)
-        return {'answer': fallback, 'steps': []}
+        logger.warning("OpenAI client not available, using fallback")
+        return solve_problem_fallback(problem_type)
+    
+    # IMPORTANT: If no problem text, use fallback instead of letting GPT make up a random problem
+    if not problem_text or not problem_text.strip():
+        logger.warning("No problem text provided to GPT, using fallback solution")
+        return solve_problem_fallback(problem_type)
     
     type_name = PROBLEM_TYPE_NAMES.get(problem_type, "calculus")
     
-    # If we don't have the actual problem text, generate a generic prompt
-    if problem_text:
-        prompt = f"""You are a calculus expert. Solve this {type_name} problem step by step:
+    prompt = f"""You are a calculus expert. Solve this {type_name} problem step by step:
 
 {problem_text}
 
@@ -143,7 +146,7 @@ STEPS:
 2. [Second step description] => [Result of this step]
 3. [Continue as needed] => [Result]
 
-ANSWER: [final answer only, e.g., f'(x) = 2x + 3]
+ANSWER: [final answer only, e.g., f'(x) = 2x + 3, written out in the simplest form]
 
 Example for derivative of f(x) = x² + 3x:
 STEPS:
@@ -152,16 +155,6 @@ STEPS:
 3. Sum the derivatives => 2x + 3
 
 ANSWER: f'(x) = 2x + 3"""
-    else:
-        # Generic response when we don't have the problem text
-        prompt = f"""You are a calculus expert. Generate a typical {type_name} problem and solve it step by step.
-
-Format your response EXACTLY like this:
-STEPS:
-1. [First step description] => [Result of this step]
-2. [Second step description] => [Result of this step]
-
-ANSWER: [final answer only]"""
 
     try:
         response = client.chat.completions.create(
