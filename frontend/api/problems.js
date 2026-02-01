@@ -1,12 +1,28 @@
 // Vercel Serverless Function for Problem Storage
-// This provides a simple key-value store for problem text
-// Problems are stored temporarily and cleaned up after 24 hours
+// Uses Vercel KV (Redis) for persistent storage
+// Problems are stored with 7 day TTL
 
-// In-memory storage (for demo - in production use Redis/KV)
-// Note: Vercel serverless functions are stateless, so this resets on cold starts
-// For production, use Vercel KV or an external database
+import { kv } from '@vercel/kv';
 
-const problems = new Map();
+// Fallback in-memory storage if KV is not configured
+const memoryStore = new Map();
+
+async function getStorage() {
+    // Check if KV is configured
+    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+        return {
+            get: async (key) => await kv.get(key),
+            set: async (key, value, ttl) => await kv.set(key, value, { ex: ttl }),
+            type: 'kv'
+        };
+    }
+    // Fallback to memory (will lose data on cold start)
+    return {
+        get: async (key) => memoryStore.get(key),
+        set: async (key, value) => memoryStore.set(key, value),
+        type: 'memory'
+    };
+}
 
 export default async function handler(req, res) {
     // Enable CORS
@@ -18,6 +34,7 @@ export default async function handler(req, res) {
         return res.status(200).end();
     }
 
+    const storage = await getStorage();
     const { hash } = req.query;
 
     // POST /api/problems - Store a problem
@@ -37,18 +54,22 @@ export default async function handler(req, res) {
                 ? problemHash.toLowerCase() 
                 : '0x' + problemHash.toLowerCase();
 
-            // Store problem (in production, use persistent storage)
-            problems.set(normalizedHash, {
+            const problemData = {
                 text: problemText,
                 type: problemType || 0,
                 timestamp: Date.now()
-            });
+            };
 
-            console.log(`Stored problem ${normalizedHash}: ${problemText.substring(0, 50)}...`);
+            // Store problem with 7 day TTL (604800 seconds)
+            const key = `problem:${normalizedHash}`;
+            await storage.set(key, problemData, 604800);
+
+            console.log(`[${storage.type}] Stored problem ${normalizedHash}: ${problemText.substring(0, 50)}...`);
 
             return res.status(200).json({ 
                 success: true, 
-                hash: normalizedHash 
+                hash: normalizedHash,
+                storage: storage.type
             });
         } catch (error) {
             console.error('Error storing problem:', error);
@@ -62,34 +83,43 @@ export default async function handler(req, res) {
     // GET /api/problems?hash=0x... - Retrieve a problem
     if (req.method === 'GET') {
         if (!hash) {
-            // Return all problems (for debugging)
             return res.status(200).json({
                 success: true,
-                count: problems.size,
+                storage: storage.type,
                 note: 'Pass ?hash=0x... to get specific problem'
             });
         }
 
-        const normalizedHash = hash.toLowerCase().startsWith('0x') 
-            ? hash.toLowerCase() 
-            : '0x' + hash.toLowerCase();
+        try {
+            const normalizedHash = hash.toLowerCase().startsWith('0x') 
+                ? hash.toLowerCase() 
+                : '0x' + hash.toLowerCase();
 
-        const problem = problems.get(normalizedHash);
+            const key = `problem:${normalizedHash}`;
+            const problem = await storage.get(key);
 
-        if (!problem) {
-            return res.status(404).json({ 
+            if (!problem) {
+                return res.status(404).json({ 
+                    success: false, 
+                    error: 'Problem not found',
+                    storage: storage.type
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                hash: normalizedHash,
+                text: problem.text,
+                type: problem.type,
+                timestamp: problem.timestamp
+            });
+        } catch (error) {
+            console.error('Error fetching problem:', error);
+            return res.status(500).json({ 
                 success: false, 
-                error: 'Problem not found' 
+                error: error.message 
             });
         }
-
-        return res.status(200).json({
-            success: true,
-            hash: normalizedHash,
-            text: problem.text,
-            type: problem.type,
-            timestamp: problem.timestamp
-        });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

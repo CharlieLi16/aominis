@@ -3,6 +3,8 @@ import { ethers } from 'ethers';
 import { PROBLEM_TYPES, TIME_TIERS, ORDER_STATUS } from '../config';
 import SolutionSteps from './SolutionSteps';
 
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 function MyOrders({ coreContract, account }) {
     const [orders, setOrders] = useState([]);
     const [solutions, setSolutions] = useState({}); // {orderId: solution}
@@ -10,7 +12,7 @@ function MyOrders({ coreContract, account }) {
     const [loading, setLoading] = useState(false);
     const [tab, setTab] = useState('issued'); // issued, solving
 
-    // Load saved problems from localStorage
+    // Load saved problems from localStorage first, then fetch from API
     useEffect(() => {
         try {
             const saved = localStorage.getItem('ominis_problems');
@@ -89,6 +91,41 @@ function MyOrders({ coreContract, account }) {
         
         setSolutions(solutionMap);
     };
+
+    // Fetch problem text from API for orders not in localStorage
+    const fetchProblemText = async (orderId, problemHash) => {
+        // Skip if already have this problem
+        if (problems[orderId]) return;
+
+        try {
+            // Try to fetch from API by hash (use query param format)
+            const response = await fetch(`${API_URL}/api/problems?hash=${problemHash}`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.text) {
+                    setProblems(prev => {
+                        const updated = { ...prev, [orderId]: { text: data.text } };
+                        // Also save to localStorage
+                        localStorage.setItem('ominis_problems', JSON.stringify(updated));
+                        return updated;
+                    });
+                }
+            }
+        } catch (e) {
+            console.log(`Could not fetch problem ${orderId} from API:`, e);
+        }
+    };
+
+    // Fetch missing problem texts when orders are loaded
+    useEffect(() => {
+        if (orders.length > 0) {
+            orders.forEach(order => {
+                if (!problems[order.id] && order.problemHash) {
+                    fetchProblemText(order.id, order.problemHash);
+                }
+            });
+        }
+    }, [orders]);
 
     const handleCancel = async (orderId) => {
         if (!coreContract) return;
