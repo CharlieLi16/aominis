@@ -352,6 +352,11 @@ def bot_loop():
                     continue
                 
                 # Process this order
+                # Check if solution already exists (webhook might have handled it)
+                if str(order.id) in solution_storage:
+                    bot_state.add_log(f'[BOT] Order #{order.id} already has solution, skipping', 'info')
+                    continue
+                
                 bot_state.add_log(f'[BOT] Processing order #{order.id} ({order.problem_type.name})', 'info')
                 bot_state.active_orders.add(order.id)
                 
@@ -645,6 +650,11 @@ class AutoSolver:
         Solve the problem and submit solution (commit + reveal).
         Returns True if successful.
         """
+        # Check if solution already exists (webhook might have handled it)
+        if str(order_id) in solution_storage:
+            self.log(f'Order #{order_id} already has solution, skipping', 'info')
+            return True
+        
         try:
             self.log(f'Solving order #{order_id} ({order.problem_type.name})...', 'info')
             
@@ -1191,8 +1201,15 @@ def save_solution_storage():
     except Exception as e:
         logger.error(f"Failed to save solution storage: {e}")
 
-def store_solution_data(order_id: int, problem_hash: str, solution_data: dict):
-    """Store solution with steps for an order"""
+def store_solution_data(order_id: int, problem_hash: str, solution_data: dict, overwrite: bool = False):
+    """Store solution with steps for an order. Won't overwrite existing unless forced."""
+    order_key = str(order_id)
+    
+    # Don't overwrite existing solutions unless explicitly requested
+    if order_key in solution_storage and not overwrite:
+        logger.info(f"Solution for order #{order_id} already exists, skipping storage")
+        return
+    
     # Create a hash of the steps for verification
     steps_str = json.dumps(solution_data.get('steps', []), sort_keys=True)
     steps_hash = '0x' + hashlib.sha256(steps_str.encode()).hexdigest()
