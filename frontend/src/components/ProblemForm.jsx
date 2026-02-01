@@ -159,6 +159,23 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                 console.log('Could not store problem on API:', e);
             }
             
+            // Also store to Bot Server for solving
+            try {
+                const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
+                await fetch(`${botServerUrl}/problems`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        hash: problemHash,
+                        text: problemText,
+                        type: problemType
+                    })
+                });
+                console.log('Problem stored to Bot Server');
+            } catch (e) {
+                console.log('Could not store problem on Bot Server:', e);
+            }
+            
             // Get orderId from event logs
             const iface = new ethers.Interface([
                 "event ProblemPosted(uint256 indexed orderId, address indexed issuer, uint8 problemType, uint8 timeTier, uint256 reward)"
