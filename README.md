@@ -36,11 +36,62 @@ CalcSolverCore.sol          <- Main coordinator
 
 ## Flow
 
-1. **Issuer posts problem** → Locks reward
-2. **Solver accepts order** → Locks bond, clock starts
-3. **Solver commits hash** → `hash(solution || salt)` (anti-MEV)
-4. **Solver reveals solution** → Verification
-5. **Settlement** → Reward to solver OR refund to issuer
+### Pay-Per-Question Mode
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Contract
+    participant Bot
+    participant Escrow
+
+    User->>Contract: postProblem(hash, type, tier)
+    Contract->>Escrow: Lock USDC reward
+    Bot->>Contract: acceptOrder(orderId)
+    Note over Bot: Solve with GPT
+    Bot->>Contract: commitSolution(hash)
+    Bot->>Contract: revealSolution(solution, salt)
+    Note over Contract: Verify hash matches
+    Contract->>Escrow: Release reward to Bot
+```
+
+### Subscription Mode (Instant)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Contract
+    participant BotServer
+
+    User->>Frontend: Submit Problem
+    Frontend->>Contract: postProblemWithSubscription()
+    Contract-->>Frontend: orderId + OrderAssignedToBot
+    Frontend->>BotServer: POST /webhook/problem
+    Note over BotServer: Solve with GPT immediately
+    BotServer->>Contract: commitSolution()
+    BotServer->>Contract: revealSolution()
+    BotServer-->>Frontend: solution + tx_hash
+    User->>Frontend: View answer in MyOrders
+```
+
+### Commit-Reveal Mechanism
+
+The commit-reveal scheme prevents MEV (frontrunning):
+
+1. **Commit Phase**: Solver submits `hash(solution + salt)` - nobody can see the actual answer
+2. **Reveal Phase**: Solver submits `(solution, salt)` - contract verifies `hash(solution + salt) == committed_hash`
+
+```
+commitHash = keccak256(abi.encodePacked(solution, salt))
+
+// Reveal verifies:
+keccak256(abi.encodePacked(revealedSolution, revealedSalt)) == storedCommitHash
+```
+
+This prevents:
+- Other bots from copying the solution before it's submitted
+- MEV bots from frontrunning the reveal transaction
 
 ## Cost Model
 
@@ -63,24 +114,55 @@ Target: **$0.01 per problem**
 
 ## Development
 
-### Contracts
+### Contracts (Foundry)
 
 ```bash
-cd calcsolver/contracts
-# TODO: Add compilation instructions
+cd contracts
+forge build
+forge test
 ```
 
-### Simulation
+### Bot Server (Python)
 
 ```bash
-cd calcsolver/simulation
-pip install -r ../requirements.txt
-python calc_solver_simulation.py
+cd sdk
+pip install -r requirements.txt
+
+# Set environment variables
+export PRIVATE_KEY=0x...
+export RPC_URL=https://sepolia.infura.io/v3/...
+export CORE_ADDRESS=0x...
+export OPENAI_API_KEY=sk-...
+
+python bot_server.py
 ```
+
+### Frontend (React + Vite)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Deployed Contracts (Sepolia)
+
+| Contract | Address |
+|----------|---------|
+| CalcSolverCore | `0x62E49387FFc45F67079C147Ee4D4bB7d710767F0` |
+| OrderBook | `0x9D662B02759C89748A0Cd1e40dab7925b267f0bb` |
+| Escrow | `0xCD4284e0Ee4245F84c327D861Fb72C03ac354F8F` |
+| SubscriptionManager | `0x9b07227938F62D206474A026a1551457bD1b05d1` |
+| BotRegistry | `0x96e8d413d21081D1DD2949E580486945471a3113` |
 
 ## Status
 
-**Skeleton implementation** - All files contain structure and comments for understanding. Fill in the `TODO` sections to complete.
+- [x] Smart contracts deployed on Sepolia
+- [x] Frontend deployed on Vercel
+- [x] Bot Server with GPT integration
+- [x] Subscription mode with instant solving
+- [ ] Oracle verification service
+- [ ] Mainnet deployment
 
 ## Key Design Decisions
 
