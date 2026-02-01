@@ -572,15 +572,30 @@ class AutoSolver:
                 current_block = self.w3.eth.block_number
                 from_block = max(0, current_block - 100)
             
-            # Create event filter for OrderAssignedToBot events where bot == our address
-            # Note: web3.py uses from_block (snake_case) not fromBlock (camelCase)
-            event_filter = self.core_contract.events.OrderAssignedToBot.create_filter(
-                from_block=from_block,
-                argument_filters={'bot': self.bot_address}
-            )
+            # Use get_logs instead of create_filter for better compatibility
+            # Get OrderAssignedToBot event signature
+            event_signature = self.core_contract.events.OrderAssignedToBot
             
-            events = event_filter.get_all_entries()
-            order_ids = [event.args.orderId for event in events]
+            # Build filter for events where bot == our address (indexed parameter)
+            bot_address_padded = '0x' + self.bot_address.lower().replace('0x', '').zfill(64)
+            
+            logs = self.w3.eth.get_logs({
+                'address': self.core_contract.address,
+                'fromBlock': from_block,
+                'toBlock': 'latest',
+                'topics': [
+                    event_signature.event_abi['signature'] if hasattr(event_signature.event_abi, 'signature') else self.w3.keccak(text='OrderAssignedToBot(uint256,address,uint8)').hex(),
+                    None,  # orderId (indexed but we want all)
+                    bot_address_padded  # bot address (indexed)
+                ]
+            })
+            
+            order_ids = []
+            for log in logs:
+                # orderId is the first indexed topic (after event signature)
+                if len(log['topics']) > 1:
+                    order_id = int(log['topics'][1].hex(), 16)
+                    order_ids.append(order_id)
             
             if order_ids:
                 self.log(f'Found {len(order_ids)} assigned orders from events: {order_ids}', 'info')
