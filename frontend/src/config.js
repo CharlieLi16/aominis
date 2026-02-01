@@ -13,6 +13,9 @@ export const NETWORKS = {
             core: '0x62E49387FFc45F67079C147Ee4D4bB7d710767F0',
             orderBook: '0x9D662B02759C89748A0Cd1e40dab7925b267f0bb',
             escrow: '0xCD4284e0Ee4245F84c327D861Fb72C03ac354F8F',
+            subscriptionManager: '0x9b07227938F62D206474A026a1551457bD1b05d1',
+            botRegistry: '0x96e8d413d21081D1DD2949E580486945471a3113',
+            ratingSystem: '0xfb4c8495Cb53dF5d1d4AA7883357c58d764B2870',
         }
     },
     arbitrum_sepolia: {

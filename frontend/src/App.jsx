@@ -9,7 +9,7 @@ import SubscriptionPage from './components/SubscriptionPage';
 import BotMarketplace from './components/BotMarketplace';
 import BotProfile from './components/BotProfile';
 import CreditsBar from './components/CreditsBar';
-import { NETWORKS, DEFAULT_NETWORK, CORE_ABI, USDC_ABI } from './config';
+import { NETWORKS, DEFAULT_NETWORK, CORE_ABI, USDC_ABI, SUBSCRIPTION_MANAGER_ABI } from './config';
 
 function App() {
     // Wallet state
@@ -22,6 +22,7 @@ function App() {
     // Contract state
     const [coreContract, setCoreContract] = useState(null);
     const [usdcContract, setUsdcContract] = useState(null);
+    const [subscriptionContract, setSubscriptionContract] = useState(null);
     const [usdcBalance, setUsdcBalance] = useState('0');
     
     // UI state - check URL for initial tab
@@ -40,7 +41,7 @@ function App() {
     
     // Subscription state
     const [subscription, setSubscription] = useState(null);
-    const [creditsRemaining, setCreditsRemaining] = useState(5);
+    const [creditsRemaining, setCreditsRemaining] = useState(0); // Will be loaded from chain
     const [selectedBotProfile, setSelectedBotProfile] = useState(null);
 
     // Update URL when tab changes
@@ -175,6 +176,37 @@ function App() {
                 } catch (e) {
                     console.error('Error fetching USDC balance:', e);
                     setUsdcBalance('0');
+                }
+            }
+            
+            // Setup SubscriptionManager contract
+            if (networkConfig.contracts.subscriptionManager) {
+                const subMgr = new ethers.Contract(
+                    networkConfig.contracts.subscriptionManager,
+                    SUBSCRIPTION_MANAGER_ABI,
+                    signer
+                );
+                setSubscriptionContract(subMgr);
+                
+                // Fetch subscription status from chain
+                try {
+                    const userAddress = await signer.getAddress();
+                    const subData = await subMgr.getUserSubscription(userAddress);
+                    const credits = await subMgr.getCreditsRemaining(userAddress);
+                    
+                    setSubscription({
+                        tier: Number(subData.tier),
+                        startTime: Number(subData.startTime),
+                        endTime: Number(subData.endTime),
+                        creditsRemaining: Number(credits),
+                    });
+                    setCreditsRemaining(Number(credits));
+                    console.log('Subscription loaded:', { tier: Number(subData.tier), credits: Number(credits) });
+                } catch (e) {
+                    console.log('Could not fetch subscription:', e);
+                    // Default to free tier
+                    setSubscription({ tier: 0, creditsRemaining: 0 });
+                    setCreditsRemaining(0);
                 }
             }
         } catch (e) {
@@ -321,6 +353,7 @@ function App() {
                         usdcContract={usdcContract}
                         network={network}
                         onError={setError}
+                        subscription={subscription}
                     />
                 )}
                 
