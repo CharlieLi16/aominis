@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ominis-postgres
+    environment:
+      POSTGRES_USER: ominis
+      POSTGRES_PASSWORD: ominis_dev
+      POSTGRES_DB: ominis
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ominis"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  indexer:
+    build: .
+    container_name: ominis-indexer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ominis:ominis_dev@postgres:5432/ominis
+      RPC_URL: ${RPC_URL}
+      CORE_CONTRACT: ${CORE_CONTRACT}
+      START_BLOCK: ${START_BLOCK:-0}
+    ports:
+      - "8001:8001"
+
+volumes:
+  postgres_data:

@@ -1,0 +1,57 @@
+# Foundry
+out/
+cache/
+lib/
+
+# Environment - IMPORTANT: Never commit these!
+.env
+.env.local
+.env.production
+*.env
+sdk/.env
+
+# Sensitive files
+**/private_key*
+**/secret*
+**/*credentials*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+*.egg
+
+# Node (for frontend)
+node_modules/
+dist/
+.next/
+build/
+
+# SDK runtime files
+sdk/problem_storage.json
+sdk/solution_storage.json
+sdk/bot_registration.json
+sdk/ominis_sdk.egg-info/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test artifacts
+coverage/
+.nyc_output/
+
+# Vercel
+.vercel

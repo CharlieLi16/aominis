@@ -1,0 +1,160 @@
+// Ominis Frontend Configuration
+
+export const NETWORKS = {
+    sepolia: {
+        chainId: 11155111,
+        chainIdHex: '0xaa36a7',
+        name: 'Sepolia',
+        rpc: 'https://ethereum-sepolia-rpc.publicnode.com',
+        explorer: 'https://sepolia.etherscan.io',
+        currency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+        usdc: '0x496e1D036D018C0930fBd199e30738efE0B4B753',
+        contracts: {
+            core: '0x05465FEd0ba03A012c87Ac215c249EeA48aEcFd0',
+            orderBook: '0x9D662B02759C89748A0Cd1e40dab7925b267f0bb',
+            escrow: '0xCD4284e0Ee4245F84c327D861Fb72C03ac354F8F',
+        }
+    },
+    arbitrum_sepolia: {
+        chainId: 421614,
+        chainIdHex: '0x66eee',
+        name: 'Arbitrum Sepolia',
+        rpc: 'https://sepolia-rollup.arbitrum.io/rpc',
+        explorer: 'https://sepolia.arbiscan.io',
+        currency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+        usdc: '',
+        contracts: {
+            core: '',
+            orderBook: '',
+            escrow: '',
+        }
+    },
+    arbitrum_one: {
+        chainId: 42161,
+        chainIdHex: '0xa4b1',
+        name: 'Arbitrum One',
+        rpc: 'https://arb1.arbitrum.io/rpc',
+        explorer: 'https://arbiscan.io',
+        currency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+        usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+        contracts: {
+            core: '',
+            orderBook: '',
+            escrow: '',
+        }
+    }
+};
+
+export const DEFAULT_NETWORK = 'sepolia';
+
+export const PROBLEM_TYPES = [
+    { id: 0, name: 'Derivative', icon: '∂' },
+    { id: 1, name: 'Integral', icon: '∫' },
+    { id: 2, name: 'Limit', icon: 'lim' },
+    { id: 3, name: 'Differential Eq', icon: 'dy/dx' },
+    { id: 4, name: 'Series', icon: 'Σ' },
+];
+
+export const TIME_TIERS = [
+    { id: 0, name: '2 min', duration: 120, description: 'Fastest - Premium' },
+    { id: 1, name: '5 min', duration: 300, description: 'Fast' },
+    { id: 2, name: '15 min', duration: 900, description: 'Standard' },
+    { id: 3, name: '1 hour', duration: 3600, description: 'Economy' },
+];
+
+export const ORDER_STATUS = {
+    0: { name: 'Open', color: 'green' },
+    1: { name: 'Accepted', color: 'blue' },
+    2: { name: 'Committed', color: 'purple' },
+    3: { name: 'Revealed', color: 'yellow' },
+    4: { name: 'Verified', color: 'green' },
+    5: { name: 'Challenged', color: 'red' },
+    6: { name: 'Expired', color: 'gray' },
+    7: { name: 'Cancelled', color: 'gray' },
+    8: { name: 'Rejected', color: 'red' },
+};
+
+// Contract ABIs (minimal for frontend)
+export const CORE_ABI = [
+    "function postProblem(bytes32 problemHash, uint8 problemType, uint8 timeTier) external returns (uint256)",
+    "function acceptOrder(uint256 orderId) external",
+    "function commitSolution(uint256 orderId, bytes32 commitHash) external",
+    "function revealSolution(uint256 orderId, string solution, bytes32 salt) external",
+    "function claimReward(uint256 orderId) external",
+    "function claimTimeout(uint256 orderId) external",
+    "function submitChallenge(uint256 orderId, string reason) external",
+    "function cancelOrder(uint256 orderId) external",
+    "function getOrder(uint256 orderId) external view returns (tuple(uint256 id, address issuer, bytes32 problemHash, uint8 problemType, uint8 timeTier, uint8 status, uint256 reward, uint256 createdAt, uint256 deadline, address solver))",
+    "function getTierPrice(uint8 tier) external view returns (uint256)",
+    "event ProblemPosted(uint256 indexed orderId, address indexed issuer, uint8 problemType, uint8 timeTier, uint256 reward)",
+    "event OrderAccepted(uint256 indexed orderId, address indexed solver)",
+    "event SolutionRevealed(uint256 indexed orderId, address indexed solver, string solution)",
+];
+
+export const USDC_ABI = [
+    "function approve(address spender, uint256 amount) external returns (bool)",
+    "function allowance(address owner, address spender) external view returns (uint256)",
+    "function balanceOf(address account) external view returns (uint256)",
+];
+
+// Subscription Manager ABI
+export const SUBSCRIPTION_MANAGER_ABI = [
+    "function subscribe(uint8 tier) external",
+    "function renewSubscription() external",
+    "function cancelSubscription() external",
+    "function useCredit(address user) external returns (bool)",
+    "function getUserSubscription(address user) external view returns (tuple(address user, uint8 tier, uint256 startTime, uint256 endTime, uint256 creditsRemaining, uint256 creditsUsedThisMonth, uint256 lastCreditReset))",
+    "function getTierConfig(uint8 tier) external view returns (tuple(uint256 pricePerMonth, uint256 monthlyCredits, bool hasSteps, bool hasPremiumAccess, bool hasRefundGuarantee))",
+    "function isSubscriptionActive(address user) external view returns (bool)",
+    "function hasCreditsRemaining(address user) external view returns (bool)",
+    "function hasPremiumAccess(address user) external view returns (bool)",
+    "function getCreditsRemaining(address user) external view returns (uint256)",
+    "function getTierPrice(uint8 tier) external view returns (uint256)",
+    "event SubscriptionCreated(address indexed user, uint8 tier, uint256 endTime)",
+    "event SubscriptionRenewed(address indexed user, uint8 tier, uint256 newEndTime)",
+    "event CreditUsed(address indexed user, uint256 creditsRemaining)",
+];
+
+// Bot Registry ABI
+export const BOT_REGISTRY_ABI = [
+    "function registerBot(string name, string description, string webhookUrl, bool isPremium, uint8[] supportedTypes) external",
+    "function updateBot(string name, string description, string webhookUrl, uint8[] supportedTypes) external",
+    "function setBotStatus(bool isActive) external",
+    "function getBotInfo(address botAddress) external view returns (tuple(address owner, string name, string description, string webhookUrl, bool isPremium, uint8[] supportedTypes, bool isActive, uint256 totalSolved, uint256 totalRating, uint256 ratingCount, uint256 monthlyUsage, uint256 registeredAt))",
+    "function getTopBots(uint256 limit) external view returns (address[])",
+    "function getBotsByType(uint8 problemType) external view returns (address[])",
+    "function getAverageRating(address botAddress) external view returns (uint256)",
+    "function isRegistered(address botAddress) external view returns (bool)",
+    "function platformBot() external view returns (address)",
+    "event BotRegistered(address indexed botAddress, address indexed owner, string name, bool isPremium)",
+    "event BotStatusChanged(address indexed botAddress, bool isActive)",
+];
+
+// Rating System ABI
+export const RATING_SYSTEM_ABI = [
+    "function submitReview(uint256 orderId, uint8 rating, string comment) external returns (uint256)",
+    "function submitGeneralReview(address bot, uint8 rating, string comment) external returns (uint256)",
+    "function updateReview(uint256 reviewId, uint8 newRating, string newComment) external",
+    "function getReview(uint256 reviewId) external view returns (tuple(address user, address bot, uint256 orderId, uint8 rating, string comment, uint256 timestamp, bool isVerified))",
+    "function getBotReviews(address bot, uint256 offset, uint256 limit) external view returns (tuple(address user, address bot, uint256 orderId, uint8 rating, string comment, uint256 timestamp, bool isVerified)[])",
+    "function getBotAverageRating(address bot) external view returns (uint256)",
+    "function getBotReviewCount(address bot) external view returns (uint256)",
+    "event ReviewSubmitted(uint256 indexed reviewId, address indexed user, address indexed bot, uint256 orderId, uint8 rating)",
+];
+
+// Subscription tiers
+export const SUBSCRIPTION_TIERS = {
+    FREE: { id: 0, name: 'Free', price: 0, credits: 5 },
+    STUDY: { id: 1, name: 'Study', price: 9.99, credits: 100 },
+    STUDY_PLUS: { id: 2, name: 'Study+', price: 14.99, credits: -1 },
+    EXPERT: { id: 3, name: 'Expert', price: 24.99, credits: -1 },
+};
+
+// Extended Core ABI with subscription functions
+export const CORE_ABI_EXTENDED = [
+    ...CORE_ABI,
+    "function postProblemWithSubscription(bytes32 problemHash, uint8 problemType, uint8 target, address targetBot) external returns (uint256)",
+    "function getOrderBot(uint256 orderId) external view returns (address)",
+    "function isSubscriptionModeEnabled() external view returns (bool)",
+    "event OrderAssignedToBot(uint256 indexed orderId, address indexed bot, uint8 targetType)",
+];

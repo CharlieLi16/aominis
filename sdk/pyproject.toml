@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ominis-sdk"
+version = "0.1.0"
+description = "Python SDK for Ominis Calculus Solver Protocol"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Ominis Team"}
+]
+keywords = ["blockchain", "ethereum", "calculus", "solver", "web3"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "web3>=6.0.0",
+    "python-dotenv>=1.0.0",
+    "sympy>=1.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+ai = [
+    "openai>=1.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/ominis/sdk"
+"Bug Tracker" = "https://github.com/ominis/sdk/issues"
+
+[tool.setuptools]
+py-modules = ["ominis_sdk"]

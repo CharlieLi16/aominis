@@ -1,0 +1,24 @@
+# Ominis SDK Dependencies
+
+# Web3 interaction
+web3>=6.0.0
+
+# Async support
+aiohttp>=3.8.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Bot Server
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# AI-based solving
+openai>=1.0.0
+
+# Local symbolic computation (for solving calculus problems)
+sympy>=1.12
+
+# Development
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
