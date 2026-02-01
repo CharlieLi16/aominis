@@ -577,8 +577,9 @@ class AutoSolver:
                 from_block = max(0, current_block - 100)
             
             # Create event filter for OrderAssignedToBot events where bot == our address
+            # Note: web3.py uses from_block (snake_case) not fromBlock (camelCase)
             event_filter = self.core_contract.events.OrderAssignedToBot.create_filter(
-                fromBlock=from_block,
+                from_block=from_block,
                 argument_filters={'bot': self.bot_address}
             )
             
