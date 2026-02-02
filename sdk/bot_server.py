@@ -119,10 +119,11 @@ PROBLEM_TYPE_NAMES = {
     4: "series/summation",
 }
 
-def solve_with_gpt(problem_type: int, problem_text: str = None) -> dict:
+def solve_with_gpt(problem_type: int, problem_text: str = None, problem_type_label: str = None) -> dict:
     """
-    Solve a calculus problem using ChatGPT with step-by-step explanation.
+    Solve a math problem using ChatGPT with step-by-step explanation.
     Returns dict with 'answer' and 'steps'.
+    problem_type_label: optional string for GPT prompt (e.g. "linear algebra"); if not set, uses PROBLEM_TYPE_NAMES[problem_type].
     """
     client = get_openai_client()
     if not client:
@@ -134,9 +135,9 @@ def solve_with_gpt(problem_type: int, problem_text: str = None) -> dict:
         logger.warning("No problem text provided to GPT, using fallback solution")
         return solve_problem_fallback(problem_type)
     
-    type_name = PROBLEM_TYPE_NAMES.get(problem_type, "calculus")
+    type_name = (problem_type_label or "").strip() or PROBLEM_TYPE_NAMES.get(problem_type, "math")
     
-    prompt = f"""You are a calculus expert. Solve this {type_name} problem step by step:
+    prompt = f"""You are a {type_name} expert. Solve this {type_name} problem step by step:
 
 {problem_text}
 
@@ -160,7 +161,7 @@ ANSWER: f'(x) = 2x + 3"""
         response = client.chat.completions.create(
             model="gpt-4o-mini",  # Fast and cheap
             messages=[
-                {"role": "system", "content": "You are a calculus solver that shows clear step-by-step work. Always use the exact format requested with STEPS: and ANSWER: markers."},
+                {"role": "system", "content": "You are a math solver that shows clear step-by-step work. Always use the exact format requested with STEPS: and ANSWER: markers."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=500,
@@ -261,14 +262,15 @@ def solve_problem_fallback(problem_type: int) -> dict:
     default = {'answer': f"Solution for type {problem_type}", 'steps': []}
     return fallback_data.get(problem_type, default)
 
-def solve_problem(problem_type: int, problem_hash: str, problem_text: str = None) -> dict:
+def solve_problem(problem_type: int, problem_hash: str, problem_text: str = None, problem_type_label: str = None) -> dict:
     """
     Main solve function - tries GPT first, falls back to placeholder.
     Returns dict with 'answer' and 'steps'.
+    problem_type_label: optional string for GPT prompt; if not set, uses PROBLEM_TYPE_NAMES[problem_type].
     """
     # Try GPT if API key is configured
     if os.getenv('OPENAI_API_KEY'):
-        return solve_with_gpt(problem_type, problem_text)
+        return solve_with_gpt(problem_type, problem_text, problem_type_label)
     
     # Fallback to placeholder
     return solve_problem_fallback(problem_type)
@@ -383,8 +385,11 @@ def bot_loop():
                         bot_state.add_log(f'[BOT] Storage has {len(problem_storage)} problems: {list(problem_storage.keys())[:3]}', 'info')
                         
                         problem_text = None
+                        problem_type_label = None
                         if problem_hash in problem_storage:
-                            problem_text = problem_storage[problem_hash].get('text')
+                            stored = problem_storage[problem_hash]
+                            problem_text = stored.get('text')
+                            problem_type_label = stored.get('type_label')
                         
                         if problem_text:
                             bot_state.add_log(f'[BOT] Found problem: {problem_text[:50]}...', 'info')
@@ -392,7 +397,7 @@ def bot_loop():
                             bot_state.add_log(f'[BOT] Problem text NOT FOUND for hash {problem_hash[:18]}', 'warning')
                         
                         bot_state.add_log(f'[BOT] Solving with {"GPT" if os.getenv("OPENAI_API_KEY") else "fallback"}...', 'info')
-                        solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text)
+                        solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text, problem_type_label)
                         solution = solution_data['answer']
                         steps = solution_data.get('steps', [])
                         bot_state.add_log(f'[BOT] Solution: {solution} ({len(steps)} steps)', 'success')
@@ -662,17 +667,20 @@ class AutoSolver:
             raw_hash = order.problem_hash.hex().lower()
             problem_hash = '0x' + raw_hash if not raw_hash.startswith('0x') else raw_hash
             
-            # Try to get problem text from storage
+            # Try to get problem text and type_label from storage
             problem_text = None
+            problem_type_label = None
             if problem_hash in problem_storage:
-                problem_text = problem_storage[problem_hash].get('text')
+                stored = problem_storage[problem_hash]
+                problem_text = stored.get('text')
+                problem_type_label = stored.get('type_label')
                 self.log(f'Found problem text: {problem_text[:50]}...', 'info')
             else:
                 self.log(f'Problem text not found for hash {problem_hash[:18]}...', 'warning')
             
             # Solve the problem
             self.log(f'Solving with {"GPT" if os.getenv("OPENAI_API_KEY") else "fallback"}...', 'info')
-            solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text)
+            solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text, problem_type_label)
             solution = solution_data['answer']
             steps = solution_data.get('steps', [])
             self.log(f'Solution: {solution} ({len(steps)} steps)', 'success')
@@ -1171,6 +1179,7 @@ def solve_endpoint():
     problem_text = data.get('problem_text')
     problem_hash = data.get('problem_hash', '')
     order_id = data.get('order_id')
+    problem_type_label = (data.get('problem_type_label') or data.get('problemTypeLabel') or '').strip() or None
     
     # Normalize hash for lookup
     if problem_hash:
@@ -1180,14 +1189,17 @@ def solve_endpoint():
         problem_hash_normalized = ''
     
     # If no problem text provided, try to get from storage
-    if not problem_text and problem_hash_normalized:
-        if problem_hash_normalized in problem_storage:
-            problem_text = problem_storage[problem_hash_normalized].get('text')
+    if problem_hash_normalized and problem_hash_normalized in problem_storage:
+        stored = problem_storage[problem_hash_normalized]
+        if not problem_text:
+            problem_text = stored.get('text')
+        if not problem_type_label and stored.get('type_label'):
+            problem_type_label = stored.get('type_label')
     
     logger.info(f"Solving problem type {problem_type}: {problem_text[:50] if problem_text else 'No text'}...")
     
     try:
-        result = solve_problem(problem_type, problem_hash_normalized, problem_text)
+        result = solve_problem(problem_type, problem_hash_normalized, problem_text, problem_type_label)
         logger.info(f"Solution: {result['answer']} ({len(result['steps'])} steps)")
         
         # Store solution if order_id provided
@@ -1302,6 +1314,7 @@ def store_problem():
     problem_storage[problem_hash] = {
         'text': data['text'],
         'type': data.get('type', 0),
+        'type_label': (data.get('type_label') or data.get('problemTypeLabel') or '').strip() or None,
         'timestamp': datetime.now().isoformat()
     }
     save_problem_storage()  # Persist to file
@@ -1529,16 +1542,18 @@ def receive_problem_webhook():
     
     # Store problem for solving
     normalized_hash = '0x' + problem_hash.lower().replace('0x', '')
+    problem_type_label = (data.get('problem_type_label') or data.get('problemTypeLabel') or '').strip() or None
     problem_storage[normalized_hash] = {
         'text': problem_text,
         'type': problem_type,
+        'type_label': problem_type_label,
         'timestamp': datetime.now().isoformat()
     }
     save_problem_storage()
     
     # Solve the problem immediately
     try:
-        solution_data = solve_problem(problem_type, normalized_hash, problem_text)
+        solution_data = solve_problem(problem_type, normalized_hash, problem_text, problem_type_label)
         solution = solution_data['answer']
         steps = solution_data.get('steps', [])
         

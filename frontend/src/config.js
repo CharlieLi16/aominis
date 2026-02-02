@@ -51,11 +51,19 @@ export const NETWORKS = {
 export const DEFAULT_NETWORK = 'sepolia';
 
 export const PROBLEM_TYPES = [
-    { id: 0, name: 'Derivative', icon: '∂' },
-    { id: 1, name: 'Integral', icon: '∫' },
-    { id: 2, name: 'Limit', icon: 'lim' },
-    { id: 3, name: 'Differential Eq', icon: 'dy/dx' },
-    { id: 4, name: 'Series', icon: 'Σ' },
+    // Contract types 0-4 (calculus)
+    { id: 0, name: 'Derivative', icon: '∂', promptLabel: 'derivative' },
+    { id: 1, name: 'Integral', icon: '∫', promptLabel: 'integral' },
+    { id: 2, name: 'Limit', icon: 'lim', promptLabel: 'limit' },
+    { id: 3, name: 'Differential Eq', icon: 'dy/dx', promptLabel: 'differential equation' },
+    { id: 4, name: 'Series', icon: 'Σ', promptLabel: 'series/summation' },
+    // General math (on-chain as 0), prompt label for GPT
+    { id: 0, name: 'Linear Algebra', icon: '⊕', promptLabel: 'linear algebra' },
+    { id: 0, name: 'Statistics', icon: 'σ', promptLabel: 'statistics' },
+    { id: 0, name: 'Probability', icon: 'P', promptLabel: 'probability' },
+    { id: 0, name: 'Number Theory', icon: 'ℤ', promptLabel: 'number theory' },
+    { id: 0, name: 'Geometry', icon: '△', promptLabel: 'geometry' },
+    { id: 0, name: 'Other', icon: '?', promptLabel: '' },
 ];
 
 export const TIME_TIERS = [

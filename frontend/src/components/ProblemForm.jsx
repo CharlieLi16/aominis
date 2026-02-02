@@ -12,7 +12,8 @@ const SOLVING_METHODS = [
 
 function ProblemForm({ account, coreContract, usdcContract, network, onError, subscription }) {
     const [problemText, setProblemText] = useState('');
-    const [problemType, setProblemType] = useState(0);
+    const [selectedTypeIndex, setSelectedTypeIndex] = useState(0); // index into PROBLEM_TYPES
+    const [problemTypeLabelOverride, setProblemTypeLabelOverride] = useState(''); // optional custom label for GPT
     const [timeTier, setTimeTier] = useState(1); // Default to 5min
     const [price, setPrice] = useState('0');
     const [submitting, setSubmitting] = useState(false);
@@ -34,7 +35,10 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
     const [textareaExpanded, setTextareaExpanded] = useState(false);
     
     const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
-    
+
+    const problemType = PROBLEM_TYPES[selectedTypeIndex]?.id ?? 0;
+    const problemTypeLabel = (problemTypeLabelOverride.trim() || PROBLEM_TYPES[selectedTypeIndex]?.promptLabel || '').trim() || undefined;
+
     // Check if subscription mode is enabled on contract
     useEffect(() => {
         const checkSubscriptionMode = async () => {
@@ -222,7 +226,8 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                     body: JSON.stringify({
                         problemHash: problemHash,
                         problemText: problemText,
-                        problemType: problemType
+                        problemType: problemType,
+                        problemTypeLabel: problemTypeLabel || undefined
                     })
                 });
             } catch (e) {
@@ -244,6 +249,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                         savedProblems[orderId] = {
                             text: problemText,
                             type: problemType,
+                            typeLabel: problemTypeLabel,
                             tier: timeTier,
                             hash: problemHash,
                             timestamp: Date.now(),
@@ -268,6 +274,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                             problem_hash: problemHash,
                             problem_text: problemText,
                             problem_type: problemType,
+                            problem_type_label: problemTypeLabel || undefined,
                             submit_to_chain: true
                         })
                     });
@@ -292,7 +299,8 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                         body: JSON.stringify({
                             hash: problemHash,
                             text: problemText,
-                            type: problemType
+                            type: problemType,
+                            type_label: problemTypeLabel || undefined
                         })
                     });
                     console.log('Problem stored to Bot Server');
@@ -328,13 +336,13 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                 <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-300 mb-1.5">Problem Type</label>
                     <div className="flex flex-wrap gap-1.5">
-                        {PROBLEM_TYPES.map(type => (
+                        {PROBLEM_TYPES.map((type, idx) => (
                             <button
-                                key={type.id}
+                                key={`${type.id}-${type.name}-${idx}`}
                                 type="button"
-                                onClick={() => setProblemType(type.id)}
+                                onClick={() => setSelectedTypeIndex(idx)}
                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-all ${
-                                    problemType === type.id
+                                    selectedTypeIndex === idx
                                         ? 'bg-blue-500/20 border border-blue-500/50 text-blue-400'
                                         : 'bg-dark-800/50 border border-dark-600 text-gray-400 hover:border-dark-500'
                                 }`}
@@ -344,6 +352,18 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                             </button>
                         ))}
                     </div>
+                    {(PROBLEM_TYPES[selectedTypeIndex]?.promptLabel === '' || PROBLEM_TYPES[selectedTypeIndex]?.name === 'Other') && (
+                        <div className="mt-2">
+                            <label className="block text-xs font-medium text-gray-400 mb-1">Problem type for AI (e.g. numerical analysis)</label>
+                            <input
+                                type="text"
+                                value={problemTypeLabelOverride}
+                                onChange={(e) => setProblemTypeLabelOverride(e.target.value)}
+                                placeholder="e.g. numerical analysis, abstract algebra"
+                                className="w-full max-w-xs bg-dark-800/50 border border-dark-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            />
+                        </div>
+                    )}
                 </div>
 
                 {/* Problem Text + Preview - resizable, wrap, fit */}

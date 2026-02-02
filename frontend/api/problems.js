@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     // POST /api/problems - Store a problem
     if (req.method === 'POST') {
         try {
-            const { problemHash, problemText, problemType } = req.body;
+            const { problemHash, problemText, problemType, problemTypeLabel } = req.body;
             
             if (!problemHash || !problemText) {
                 return res.status(400).json({ 
@@ -57,6 +57,7 @@ export default async function handler(req, res) {
             const problemData = {
                 text: problemText,
                 type: problemType || 0,
+                ...(problemTypeLabel != null && problemTypeLabel !== '' && { typeLabel: problemTypeLabel }),
                 timestamp: Date.now()
             };
 
@@ -111,6 +112,7 @@ export default async function handler(req, res) {
                 hash: normalizedHash,
                 text: problem.text,
                 type: problem.type,
+                ...(problem.typeLabel != null && { typeLabel: problem.typeLabel }),
                 timestamp: problem.timestamp
             });
         } catch (error) {
