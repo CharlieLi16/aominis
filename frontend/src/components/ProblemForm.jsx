@@ -3,8 +3,6 @@ import { ethers } from 'ethers';
 import { PROBLEM_TYPES, TIME_TIERS, NETWORKS } from '../config';
 import LatexRenderer, { containsLatex } from './LatexRenderer';
 
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-
 // Solving method options
 const SOLVING_METHODS = [
     { id: 0, name: 'Platform Bot', description: 'Fast AI solver', icon: '🤖' },
@@ -28,9 +26,11 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
     const [selectedBot, setSelectedBot] = useState('0x0000000000000000000000000000000000000000');
     const [subscriptionMode, setSubscriptionMode] = useState(false);
     
-    // Image OCR state — frontend calls GPT-4 Vision directly
+    // Image OCR state — frontend calls Bot Server /api/ocr (API key on server only)
     const [imageProcessing, setImageProcessing] = useState(false);
     const [imagePreview, setImagePreview] = useState(null);
+    
+    const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
     
     // Check if subscription mode is enabled on contract
     useEffect(() => {
@@ -96,7 +96,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
         }
     };
 
-    // Handle image upload — frontend calls GPT-4 Vision directly (set VITE_OPENAI_API_KEY in .env)
+    // Handle image upload — frontend calls Bot Server /api/ocr (API key on server only)
     const handleImageUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -107,11 +107,6 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
         }
         if (file.size > 10 * 1024 * 1024) {
             onError('Image too large. Maximum size is 10MB');
-            return;
-        }
-        if (!OPENAI_API_KEY) {
-            onError('VITE_OPENAI_API_KEY not set. Add it in .env for image recognition.');
-            e.target.value = '';
             return;
         }
         
@@ -126,37 +121,18 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
             });
             setImagePreview(dataUrl);
             
-            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+            const res = await fetch(`${botServerUrl}/api/ocr`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                },
-                body: JSON.stringify({
-                    model: 'gpt-4o',
-                    max_tokens: 1000,
-                    messages: [{
-                        role: 'user',
-                        content: [
-                            {
-                                type: 'text',
-                                text: 'Extract ONLY the math problem from this image. Output in LaTeX: use $...$ for inline math, $$...$$ for block. Ignore any existing answers or student work. Return only the problem text.',
-                            },
-                            {
-                                type: 'image_url',
-                                image_url: { url: dataUrl, detail: 'high' },
-                            },
-                        ],
-                    }],
-                }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: dataUrl }),
             });
             
             const data = await res.json();
-            if (data.error) {
-                onError(data.error.message || 'OpenAI request failed');
+            if (!data.success) {
+                onError(data.error || '图片识别服务暂不可用');
                 return;
             }
-            const extracted = (data.choices?.[0]?.message?.content || '').trim();
+            const extracted = (data.text || '').trim();
             if (extracted) {
                 if (problemText.trim()) {
                     setProblemText(prev => prev + '\n\n' + extracted);
@@ -168,7 +144,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
             }
         } catch (err) {
             console.error('OCR error:', err);
-            onError('Failed to read image: ' + err.message);
+            onError('图片识别服务暂不可用: ' + err.message);
         } finally {
             setImageProcessing(false);
             e.target.value = '';
@@ -277,8 +253,6 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
             }
             
             // Notify Bot Server to solve and submit (subscription mode uses webhook)
-            const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
-            
             if (useSubscription && orderId) {
                 // Subscription mode: call webhook to solve immediately and submit to chain
                 try {

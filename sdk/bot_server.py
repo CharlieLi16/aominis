@@ -931,6 +931,60 @@ def gpt_status():
     })
 
 
+# ========== Image OCR API ==========
+
+@app.route('/api/ocr', methods=['POST'])
+def ocr_image():
+    """
+    Extract math problem from an image using GPT-4 Vision.
+    API Key stays on server (OPENAI_API_KEY); frontend sends only the image.
+    """
+    client = get_openai_client()
+    if not client:
+        return jsonify({
+            'success': False,
+            'error': 'OpenAI API key not configured (set OPENAI_API_KEY on server)'
+        }), 500
+
+    data = request.json
+    if not data or not data.get('image'):
+        return jsonify({
+            'success': False,
+            'error': 'No image provided. Send base64 or data URL in "image" field.'
+        }), 400
+
+    image_value = data['image']
+    if ',' in image_value:
+        image_value = image_value.split(',', 1)[1]
+    if not image_value.startswith('data:'):
+        image_value = f"data:image/jpeg;base64,{image_value}"
+
+    try:
+        response = client.chat.completions.create(
+            model='gpt-4o',
+            max_tokens=1000,
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'text',
+                        'text': 'Extract ONLY the math problem from this image. Output in LaTeX: use $...$ for inline math, $$...$$ for block. Ignore any existing answers or student work. Return only the problem text.',
+                    },
+                    {
+                        'type': 'image_url',
+                        'image_url': {'url': image_value, 'detail': 'high'},
+                    },
+                ],
+            }],
+        )
+        extracted = (response.choices[0].message.content or '').strip()
+        logger.info(f"OCR extracted: {extracted[:80]}...")
+        return jsonify({'success': True, 'text': extracted})
+    except Exception as e:
+        logger.error(f"OCR error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ========== Auto-Solver API Endpoints ==========
 
 @app.route('/assigned-orders', methods=['GET'])
