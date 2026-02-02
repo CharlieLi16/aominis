@@ -6,11 +6,22 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
 /**
+ * If GPT (or API) returns content wrapped in ```markdown ... ``` or ``` ... ```,
+ * unwrap so the inner content is rendered as markdown instead of a code block.
+ */
+function unwrapMarkdownCodeBlock(md) {
+    const trimmed = md.trim();
+    const match = trimmed.match(/^```(?:markdown)?\s*\n?([\s\S]*?)\n?```\s*$/);
+    return match ? match[1].trim() : md;
+}
+
+/**
  * Renders Markdown with optional math: $...$ and $$...$$ via KaTeX.
  * Supports GFM: lists, tables, bold, italic, code, etc.
  */
 function MarkdownRenderer({ text, className = '' }) {
     if (!text) return null;
+    const content = unwrapMarkdownCodeBlock(text);
 
     return (
         <div className={`markdown-body ${className}`}>
@@ -32,7 +43,7 @@ function MarkdownRenderer({ text, className = '' }) {
                     pre: ({ node, ...props }) => <pre className="mb-2 overflow-x-auto" {...props} />,
                 }}
             >
-                {text}
+                {content}
             </ReactMarkdown>
         </div>
     );
