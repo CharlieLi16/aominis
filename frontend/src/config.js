@@ -66,6 +66,83 @@ export const PROBLEM_TYPES = [
     { id: 0, name: 'Other', icon: '?', promptLabel: '' },
 ];
 
+// Type-specific examples (must match backend bot_server TYPE_EXAMPLES for preview)
+export const TYPE_EXAMPLES = {
+    'derivative': `Example for derivative of f(x) = x² + 3x:
+STEPS:
+1. Apply power rule to x²: d/dx(x²) = 2x => 2x
+2. Apply constant multiple rule to 3x: d/dx(3x) = 3 => 3
+3. Sum the derivatives => 2x + 3
+
+ANSWER: f'(x) = 2x + 3`,
+    'integral': `Example for integral ∫(x² + 1) dx:
+STEPS:
+1. Integrate x²: ∫ x² dx = x³/3 => x³/3
+2. Integrate 1: ∫ 1 dx = x => x
+3. Add constant of integration => x³/3 + x + C
+
+ANSWER: x³/3 + x + C`,
+    'limit': `Example for limit lim_{x→0} sin(x)/x:
+STEPS:
+1. Direct substitution gives 0/0 (indeterminate) => apply L'Hôpital
+2. Differentiate numerator and denominator: cos(x)/1 => 1
+
+ANSWER: 1`,
+    'differential equation': `Example for y' - 2y = 0:
+STEPS:
+1. Homogeneous ODE: y' = 2y => dy/y = 2 dx
+2. Integrate: ln|y| = 2x + C₁ => y = Ce^(2x)
+
+ANSWER: y = Ce^(2x)`,
+    'series/summation': `Example for Σ_{k=1}^{n} k:
+STEPS:
+1. Formula for sum of first n positive integers => n(n+1)/2
+
+ANSWER: n(n+1)/2`,
+    'linear algebra': `Example for row reduce to RREF and state solution:
+STEPS:
+1. [Describe first row operation] => [resulting matrix]
+2. [Describe next row operation] => [resulting matrix]
+3. [Continue until RREF] => [RREF matrix]
+4. Interpret pivots: free variables, particular solution => [solution set or "inconsistent" / "unique solution"]
+
+ANSWER: [Give the final answer: e.g. "Unique solution x=..., y=..., z=..." or "Inconsistent" or "Infinitely many solutions: x=..., y=... in terms of free variable(s)"]`,
+    'statistics': `Example for a statistics problem:
+STEPS:
+1. [First step] => [Result]
+2. [Next step] => [Result]
+
+ANSWER: [Final numerical or symbolic answer with units/interpretation if needed]`,
+    'probability': `Example for a probability problem:
+STEPS:
+1. [Identify sample space or model] => [Result]
+2. [Compute probability] => [Result]
+
+ANSWER: [Final probability, e.g. P(A) = ...]`,
+    'number theory': `Example for a number theory problem:
+STEPS:
+1. [First step] => [Result]
+2. [Next step] => [Result]
+
+ANSWER: [Final answer: integer, congruence, or proof summary]`,
+    'geometry': `Example for a geometry problem:
+STEPS:
+1. [First step] => [Result]
+2. [Next step] => [Result]
+
+ANSWER: [Final length/area/volume or relationship]`,
+};
+
+export function getExampleForType(typeName) {
+    const key = (typeName || '').trim().toLowerCase();
+    return TYPE_EXAMPLES[key] || `Example:
+STEPS:
+1. [First step] => [Result]
+2. [Next step] => [Result]
+
+ANSWER: [Final answer in simplest form]`;
+}
+
 export const TIME_TIERS = [
     { id: 0, name: '2 min', duration: 120, description: 'Fastest - Premium' },
     { id: 1, name: '5 min', duration: 300, description: 'Fast' },

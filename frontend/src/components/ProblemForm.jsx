@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { PROBLEM_TYPES, TIME_TIERS, NETWORKS } from '../config';
+import { PROBLEM_TYPES, TIME_TIERS, NETWORKS, getExampleForType } from '../config';
 import MarkdownRenderer from './MarkdownRenderer';
 
 // Solving method options
@@ -44,8 +44,9 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
     const problemTypeLabel = (problemTypeLabelOverride.trim() || PROBLEM_TYPES[selectedTypeIndex]?.promptLabel || '').trim() || undefined;
     const typeNameForPrompt = problemTypeLabel || PROBLEM_TYPES[selectedTypeIndex]?.promptLabel || PROBLEM_TYPES[selectedTypeIndex]?.name || 'math';
 
-    // Current prompt preview (mirrors backend bot_server prompt structure)
-    const currentPromptPreview = `You are a ${typeNameForPrompt} expert. Solve this ${typeNameForPrompt} problem step by step:
+    // Current prompt preview (mirrors backend bot_server prompt structure, type-specific example)
+    const exampleForPreview = getExampleForType(typeNameForPrompt);
+    const currentPromptPreview = `You are a ${typeNameForPrompt} expert. Solve this ${typeNameForPrompt} problem step by step.
 
 [Your problem will be inserted here]
 ${skillInstructions.trim() ? `
@@ -60,15 +61,9 @@ STEPS:
 2. [Second step description] => [Result of this step]
 3. [Continue as needed] => [Result]
 
-ANSWER: [final answer only, e.g., f'(x) = 2x + 3, written out in the simplest form]
+ANSWER: [final answer only, in the simplest form. For linear algebra: state "Unique solution" or "Inconsistent" or "Infinitely many solutions" and give the explicit solution.]
 
-Example for derivative of f(x) = x² + 3x:
-STEPS:
-1. Apply power rule to x²: d/dx(x²) = 2x => 2x
-2. Apply constant multiple rule to 3x: d/dx(3x) = 3 => 3
-3. Sum the derivatives => 2x + 3
-
-ANSWER: f'(x) = 2x + 3`;
+${exampleForPreview}`;
 
     // Check if subscription mode is enabled on contract
     useEffect(() => {

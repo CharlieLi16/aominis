@@ -113,11 +113,93 @@ def get_openai_client():
 
 PROBLEM_TYPE_NAMES = {
     0: "derivative",
-    1: "integral", 
+    1: "integral",
     2: "limit",
     3: "differential equation",
     4: "series/summation",
 }
+
+# Type-specific examples for the GPT prompt (so each type gets a relevant example, not always derivative)
+TYPE_EXAMPLES = {
+    "derivative": """Example for derivative of f(x) = x² + 3x:
+STEPS:
+1. Apply power rule to x²: d/dx(x²) = 2x => 2x
+2. Apply constant multiple rule to 3x: d/dx(3x) = 3 => 3
+3. Sum the derivatives => 2x + 3
+
+ANSWER: f'(x) = 2x + 3""",
+    "integral": """Example for integral ∫(x² + 1) dx:
+STEPS:
+1. Integrate x²: ∫ x² dx = x³/3 => x³/3
+2. Integrate 1: ∫ 1 dx = x => x
+3. Add constant of integration => x³/3 + x + C
+
+ANSWER: x³/3 + x + C""",
+    "limit": """Example for limit lim_{x→0} sin(x)/x:
+STEPS:
+1. Direct substitution gives 0/0 (indeterminate) => apply L'Hôpital
+2. Differentiate numerator and denominator: cos(x)/1 => 1
+
+ANSWER: 1""",
+    "differential equation": """Example for y' - 2y = 0:
+STEPS:
+1. Homogeneous ODE: y' = 2y => dy/y = 2 dx
+2. Integrate: ln|y| = 2x + C₁ => y = Ce^(2x)
+
+ANSWER: y = Ce^(2x)""",
+    "series/summation": """Example for Σ_{k=1}^{n} k:
+STEPS:
+1. Formula for sum of first n positive integers => n(n+1)/2
+
+ANSWER: n(n+1)/2""",
+    "linear algebra": """Example for row reduce to RREF and state solution:
+STEPS:
+1. [Describe first row operation] => [resulting matrix]
+2. [Describe next row operation] => [resulting matrix]
+3. [Continue until RREF] => [RREF matrix]
+4. Interpret pivots: free variables, particular solution => [solution set or "inconsistent" / "unique solution"]
+
+ANSWER: [Give the final answer: e.g. "Unique solution x=..., y=..., z=..." or "Inconsistent" or "Infinitely many solutions: x=..., y=... in terms of free variable(s)"]""",
+    "statistics": """Example for a statistics problem:
+STEPS:
+1. [First step] => [Result]
+2. [Next step] => [Result]
+
+ANSWER: [Final numerical or symbolic answer with units/interpretation if needed]""",
+    "probability": """Example for a probability problem:
+STEPS:
+1. [Identify sample space or model] => [Result]
+2. [Compute probability] => [Result]
+
+ANSWER: [Final probability, e.g. P(A) = ...]""",
+    "number theory": """Example for a number theory problem:
+STEPS:
+1. [First step] => [Result]
+2. [Next step] => [Result]
+
+ANSWER: [Final answer: integer, congruence, or proof summary]""",
+    "geometry": """Example for a geometry problem:
+STEPS:
+1. [First step] => [Result]
+2. [Next step] => [Result]
+
+ANSWER: [Final length/area/volume or relationship]""",
+}
+
+
+def _get_example_for_type(type_name: str) -> str:
+    """Return the example block for the given type (normalized to lowercase key)."""
+    key = (type_name or "").strip().lower()
+    if key in TYPE_EXAMPLES:
+        return TYPE_EXAMPLES[key]
+    # Fallback: generic math example
+    return """Example:
+STEPS:
+1. [First step] => [Result]
+2. [Next step] => [Result]
+
+ANSWER: [Final answer in simplest form]"""
+
 
 def solve_with_gpt(problem_type: int, problem_text: str = None, problem_type_label: str = None, skill_instructions: str = None) -> dict:
     """
@@ -145,7 +227,9 @@ def solve_with_gpt(problem_type: int, problem_text: str = None, problem_type_lab
 Additional instructions (user skill / preferences):
 {skill_instructions.strip()}"""
 
-    prompt = f"""You are a {type_name} expert. Solve this {type_name} problem step by step:
+    example_block = _get_example_for_type(type_name)
+
+    prompt = f"""You are a {type_name} expert. Solve this {type_name} problem step by step.
 
 {problem_text}
 {skill_block}
@@ -156,15 +240,9 @@ STEPS:
 2. [Second step description] => [Result of this step]
 3. [Continue as needed] => [Result]
 
-ANSWER: [final answer only, e.g., f'(x) = 2x + 3, written out in the simplest form]
+ANSWER: [final answer only, in the simplest form. For linear algebra: state "Unique solution" or "Inconsistent" or "Infinitely many solutions" and give the explicit solution.]
 
-Example for derivative of f(x) = x² + 3x:
-STEPS:
-1. Apply power rule to x²: d/dx(x²) = 2x => 2x
-2. Apply constant multiple rule to 3x: d/dx(3x) = 3 => 3
-3. Sum the derivatives => 2x + 3
-
-ANSWER: f'(x) = 2x + 3"""
+{example_block}"""
 
     try:
         response = client.chat.completions.create(
@@ -193,8 +271,8 @@ def parse_gpt_solution(content: str) -> dict:
     """Parse GPT response into answer and steps."""
     result = {'answer': '', 'steps': []}
     
-    # Extract answer
-    answer_match = re.search(r'ANSWER:\s*(.+?)(?:\n|$)', content, re.IGNORECASE)
+    # Extract answer: capture everything after ANSWER: to end of content (multi-line / LaTeX safe)
+    answer_match = re.search(r'ANSWER:\s*([\s\S]*)', content, re.IGNORECASE)
     if answer_match:
         result['answer'] = answer_match.group(1).strip()
     else:
