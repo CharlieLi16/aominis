@@ -1525,7 +1525,7 @@ def receive_problem_webhook():
                     order = loop.run_until_complete(sdk.get_order(order_id))
                     logger.info(f"[WEBHOOK] Order #{order_id} status: {order.status.name}")
                     
-                    if order.status.name in ['POSTED', 'ASSIGNED']:
+                    if order.status.name in ['POSTED', 'ASSIGNED', 'OPEN']:
                         # Need to accept the order first
                         webhook_solution_status[order_id]['status'] = 'accepting'
                         logger.info(f"[WEBHOOK] Accepting order #{order_id}...")
