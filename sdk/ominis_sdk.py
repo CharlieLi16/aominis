@@ -453,7 +453,7 @@ class OminisSDK:
         tx = self.core.functions.revealSolution(order_id, solution, salt).build_transaction({
             'from': self.address,
             'nonce': self.w3.eth.get_transaction_count(self.address),
-            'gas': 300000,
+            'gas': 500000,  # Increased from 300000 - reveal can use ~300k+ gas
             'gasPrice': self._get_gas_price()
         })
         
