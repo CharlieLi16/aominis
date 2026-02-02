@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { createWorker } from 'tesseract.js';
 import { PROBLEM_TYPES, TIME_TIERS, NETWORKS } from '../config';
 import LatexRenderer, { containsLatex } from './LatexRenderer';
+
+const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 
 // Solving method options
 const SOLVING_METHODS = [
@@ -27,7 +28,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
     const [selectedBot, setSelectedBot] = useState('0x0000000000000000000000000000000000000000');
     const [subscriptionMode, setSubscriptionMode] = useState(false);
     
-    // Image OCR state (client-side Tesseract.js, no server/token cost)
+    // Image OCR state — frontend calls GPT-4 Vision directly
     const [imageProcessing, setImageProcessing] = useState(false);
     const [imagePreview, setImagePreview] = useState(null);
     
@@ -95,7 +96,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
         }
     };
 
-    // Handle image upload — client-side OCR with Tesseract.js (no server, no token cost)
+    // Handle image upload — frontend calls GPT-4 Vision directly (set VITE_OPENAI_API_KEY in .env)
     const handleImageUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -106,6 +107,11 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
         }
         if (file.size > 10 * 1024 * 1024) {
             onError('Image too large. Maximum size is 10MB');
+            return;
+        }
+        if (!OPENAI_API_KEY) {
+            onError('VITE_OPENAI_API_KEY not set. Add it in .env for image recognition.');
+            e.target.value = '';
             return;
         }
         
@@ -120,14 +126,37 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
             });
             setImagePreview(dataUrl);
             
-            // Run OCR in browser (Tesseract.js)
-            const worker = await createWorker('eng', 1, {
-                logger: () => {} // silent
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    max_tokens: 1000,
+                    messages: [{
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'text',
+                                text: 'Extract ONLY the math problem from this image. Output in LaTeX: use $...$ for inline math, $$...$$ for block. Ignore any existing answers or student work. Return only the problem text.',
+                            },
+                            {
+                                type: 'image_url',
+                                image_url: { url: dataUrl, detail: 'high' },
+                            },
+                        ],
+                    }],
+                }),
             });
-            const { data: { text } } = await worker.recognize(file);
-            await worker.terminate();
             
-            const extracted = (text || '').trim();
+            const data = await res.json();
+            if (data.error) {
+                onError(data.error.message || 'OpenAI request failed');
+                return;
+            }
+            const extracted = (data.choices?.[0]?.message?.content || '').trim();
             if (extracted) {
                 if (problemText.trim()) {
                     setProblemText(prev => prev + '\n\n' + extracted);
@@ -135,7 +164,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                     setProblemText(extracted);
                 }
             } else {
-                onError('No text detected. Try a clearer image or type the problem.');
+                onError('No problem text extracted. Try another image.');
             }
         } catch (err) {
             console.error('OCR error:', err);
