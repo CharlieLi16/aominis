@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import LatexRenderer from './LatexRenderer';
 
 // Bot Server URL - same as SolverDashboard
 // Bot server URL for fetching solution steps
@@ -116,8 +117,8 @@ function SolutionSteps({ orderId, solution, showFetch = true }) {
                     <span className="text-xs text-green-400 font-medium">Solution</span>
                     {getVerificationBadge('not_available', false)}
                 </div>
-                <div className="text-white font-mono text-sm break-all">
-                    {solution}
+                <div className="text-white text-sm break-all">
+                    <LatexRenderer text={solution} />
                 </div>
             </div>
         );
@@ -137,8 +138,8 @@ function SolutionSteps({ orderId, solution, showFetch = true }) {
                     </span>
                     {getVerificationBadge(solutionData.verification_status, solutionData.verified)}
                 </div>
-                <div className="text-white font-mono text-lg font-bold break-all">
-                    {solutionData.answer || solution}
+                <div className="text-white text-lg font-bold break-all">
+                    <LatexRenderer text={solutionData.answer || solution} />
                 </div>
             </div>
 
@@ -179,12 +180,12 @@ function SolutionSteps({ orderId, solution, showFetch = true }) {
                                     
                                     {/* Step content */}
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-gray-300 text-sm">
-                                            {step.content}
-                                        </p>
+                                        <div className="text-gray-300 text-sm">
+                                            <LatexRenderer text={step.content} />
+                                        </div>
                                         {step.result && (
-                                            <div className="mt-1 font-mono text-sm text-green-400 bg-dark-900/50 rounded px-2 py-1 inline-block">
-                                                {step.result}
+                                            <div className="mt-1 text-sm text-green-400 bg-dark-900/50 rounded px-2 py-1 inline-block">
+                                                <LatexRenderer text={step.result} />
                                             </div>
                                         )}
                                     </div>

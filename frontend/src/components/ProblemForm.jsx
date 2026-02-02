@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { PROBLEM_TYPES, TIME_TIERS, NETWORKS } from '../config';
+import LatexRenderer, { containsLatex } from './LatexRenderer';
 
 // Solving method options
 const SOLVING_METHODS = [
@@ -24,6 +25,13 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
     const [solvingMethod, setSolvingMethod] = useState(0); // 0=Platform, 1=Specific, 2=Pool
     const [selectedBot, setSelectedBot] = useState('0x0000000000000000000000000000000000000000');
     const [subscriptionMode, setSubscriptionMode] = useState(false);
+    
+    // Image OCR state
+    const [imageProcessing, setImageProcessing] = useState(false);
+    const [imagePreview, setImagePreview] = useState(null);
+    
+    // Bot server URL for OCR
+    const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
     
     // Check if subscription mode is enabled on contract
     useEffect(() => {
@@ -87,6 +95,73 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
         } finally {
             setApproving(false);
         }
+    };
+
+    // Handle image upload for OCR
+    const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            onError('Please upload an image file');
+            return;
+        }
+        
+        // Validate file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            onError('Image too large. Maximum size is 10MB');
+            return;
+        }
+        
+        setImageProcessing(true);
+        
+        try {
+            // Convert to base64
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+            
+            setImagePreview(base64);
+            
+            // Call OCR API
+            const response = await fetch(`${botServerUrl}/api/ocr`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    image: base64,
+                    format: 'latex'
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Append extracted text to existing problem text
+                if (problemText.trim()) {
+                    setProblemText(prev => prev + '\n\n' + result.text);
+                } else {
+                    setProblemText(result.text);
+                }
+            } else {
+                onError(result.error || 'Failed to extract text from image');
+            }
+        } catch (err) {
+            console.error('OCR error:', err);
+            onError('Failed to process image: ' + err.message);
+        } finally {
+            setImageProcessing(false);
+            // Clear the file input
+            e.target.value = '';
+        }
+    };
+    
+    // Clear image preview
+    const clearImagePreview = () => {
+        setImagePreview(null);
     };
 
     // Submit problem
@@ -280,17 +355,110 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
 
                 {/* Problem Text */}
                 <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Problem (LaTeX or plain text)
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-300">
+                            Problem (LaTeX or plain text)
+                        </label>
+                        
+                        {/* Image Upload Buttons */}
+                        <div className="flex items-center gap-2">
+                            <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                imageProcessing 
+                                    ? 'bg-gray-500/20 text-gray-400 cursor-wait'
+                                    : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30'
+                            }`}>
+                                {imageProcessing ? (
+                                    <>
+                                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        </svg>
+                                        Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        Upload Image
+                                    </>
+                                )}
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleImageUpload}
+                                    disabled={imageProcessing}
+                                    className="hidden"
+                                />
+                            </label>
+                            
+                            {/* Camera button for mobile */}
+                            <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                imageProcessing 
+                                    ? 'bg-gray-500/20 text-gray-400 cursor-wait'
+                                    : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30'
+                            }`}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    onChange={handleImageUpload}
+                                    disabled={imageProcessing}
+                                    className="hidden"
+                                />
+                            </label>
+                        </div>
+                    </div>
+                    
+                    {/* Image Preview */}
+                    {imagePreview && (
+                        <div className="mb-2 relative">
+                            <img 
+                                src={imagePreview} 
+                                alt="Uploaded problem" 
+                                className="max-h-32 rounded-lg border border-dark-600"
+                            />
+                            <button
+                                type="button"
+                                onClick={clearImagePreview}
+                                className="absolute top-1 right-1 bg-dark-800/80 text-gray-400 hover:text-white p-1 rounded-full"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
+                    
                     <textarea
                         value={problemText}
                         onChange={(e) => setProblemText(e.target.value)}
-                        placeholder="Find the derivative of f(x) = x^2 + 3x - 5"
+                        placeholder="Find the derivative of f(x) = x^2 + 3x - 5&#10;&#10;Or use LaTeX: $\frac{d}{dx}(x^2 + 3x - 5)$&#10;&#10;Or upload/take a photo of your problem!"
                         className="w-full bg-dark-800/50 border border-dark-600 rounded-xl px-4 py-3 text-sm h-32 resize-y focus:outline-none focus:border-blue-500 placeholder-gray-500"
                     />
+                    
+                    {/* LaTeX Preview */}
+                    {problemText && containsLatex(problemText) && (
+                        <div className="mt-2 p-3 bg-dark-700/50 border border-dark-600 rounded-lg">
+                            <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                Preview:
+                            </div>
+                            <div className="text-gray-200">
+                                <LatexRenderer text={problemText} />
+                            </div>
+                        </div>
+                    )}
+                    
                     <p className="text-xs text-gray-500 mt-1">
-                        Tip: Use ^ for exponents, * for multiplication
+                        Tip: Use $...$ for inline LaTeX, $$...$$ for block equations
                     </p>
                 </div>
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { PROBLEM_TYPES, TIME_TIERS, ORDER_STATUS } from '../config';
 import SolutionSteps from './SolutionSteps';
+import LatexRenderer from './LatexRenderer';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const BOT_SERVER_URL = import.meta.env.VITE_BOT_SERVER_URL || 'http://localhost:5001';
@@ -275,8 +276,8 @@ function MyOrders({ coreContract, account }) {
                             {problems[order.id] && (
                                 <div className="bg-dark-700/50 rounded-lg p-3 mb-3">
                                     <div className="text-xs text-gray-500 mb-1">Your Problem:</div>
-                                    <div className="text-sm text-gray-200 whitespace-pre-wrap">
-                                        {problems[order.id].text}
+                                    <div className="text-sm text-gray-200">
+                                        <LatexRenderer text={problems[order.id].text} />
                                     </div>
                                 </div>
                             )}
