@@ -42,6 +42,33 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
 
     const problemType = PROBLEM_TYPES[selectedTypeIndex]?.id ?? 0;
     const problemTypeLabel = (problemTypeLabelOverride.trim() || PROBLEM_TYPES[selectedTypeIndex]?.promptLabel || '').trim() || undefined;
+    const typeNameForPrompt = problemTypeLabel || PROBLEM_TYPES[selectedTypeIndex]?.promptLabel || PROBLEM_TYPES[selectedTypeIndex]?.name || 'math';
+
+    // Current prompt preview (mirrors backend bot_server prompt structure)
+    const currentPromptPreview = `You are a ${typeNameForPrompt} expert. Solve this ${typeNameForPrompt} problem step by step:
+
+[Your problem will be inserted here]
+${skillInstructions.trim() ? `
+
+Additional instructions (user skill / preferences):
+${skillInstructions.trim()}
+` : ''}
+
+Format your response EXACTLY like this (use these exact markers):
+STEPS:
+1. [First step description] => [Result of this step]
+2. [Second step description] => [Result of this step]
+3. [Continue as needed] => [Result]
+
+ANSWER: [final answer only, e.g., f'(x) = 2x + 3, written out in the simplest form]
+
+Example for derivative of f(x) = x² + 3x:
+STEPS:
+1. Apply power rule to x²: d/dx(x²) = 2x => 2x
+2. Apply constant multiple rule to 3x: d/dx(3x) = 3 => 3
+3. Sum the derivatives => 2x + 3
+
+ANSWER: f'(x) = 2x + 3`;
 
     // Check if subscription mode is enabled on contract
     useEffect(() => {
@@ -390,15 +417,24 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                         </svg>
                     </button>
                     {skillSectionOpen && (
-                        <div className="px-4 pb-4 pt-0 border-t border-dark-600/50">
-                            <p className="text-xs text-gray-500 mb-2">Optional instructions added to the solver prompt (e.g. &quot;Always use SI units&quot;, &quot;Explain each step briefly&quot;).</p>
-                            <textarea
-                                value={skillInstructions}
-                                onChange={(e) => setSkillInstructions(e.target.value)}
-                                placeholder="e.g. Use SI units. Keep steps concise. Prefer exact fractions over decimals."
-                                rows={3}
-                                className="w-full bg-dark-800/50 border border-dark-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-y min-h-[4rem]"
-                            />
+                        <div className="px-4 pb-4 pt-0 border-t border-dark-600/50 space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-400 mb-1.5">Current prompt for this type (read-only)</label>
+                                <pre className="w-full max-h-48 overflow-auto bg-dark-900/80 border border-dark-600 rounded-lg px-3 py-2.5 text-xs text-gray-300 whitespace-pre-wrap font-mono">
+                                    {currentPromptPreview}
+                                </pre>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-400 mb-1.5">Additional instructions (appended to prompt above)</label>
+                                <p className="text-xs text-gray-500 mb-1.5">Optional (e.g. &quot;Always use SI units&quot;, &quot;Explain each step briefly&quot;).</p>
+                                <textarea
+                                    value={skillInstructions}
+                                    onChange={(e) => setSkillInstructions(e.target.value)}
+                                    placeholder="e.g. Use SI units. Keep steps concise. Prefer exact fractions over decimals."
+                                    rows={3}
+                                    className="w-full bg-dark-800/50 border border-dark-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-y min-h-[4rem]"
+                                />
+                            </div>
                         </div>
                     )}
                 </div>
