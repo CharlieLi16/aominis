@@ -30,6 +30,9 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
     const [imageProcessing, setImageProcessing] = useState(false);
     const [imagePreview, setImagePreview] = useState(null);
     
+    // Problem textarea expand/collapse
+    const [textareaExpanded, setTextareaExpanded] = useState(false);
+    
     const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
     
     // Check if subscription mode is enabled on contract
@@ -350,8 +353,30 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                             Problem (LaTeX or plain text)
                         </label>
                         
-                        {/* Image Upload Buttons */}
                         <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setTextareaExpanded(!textareaExpanded)}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-gray-400 hover:text-gray-300 hover:bg-dark-700/50 border border-dark-600"
+                                title={textareaExpanded ? 'Collapse' : 'Expand'}
+                            >
+                                {textareaExpanded ? (
+                                    <>
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                        Collapse
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                        </svg>
+                                        Expand
+                                    </>
+                                )}
+                            </button>
+                            {/* Image Upload Buttons */}
                             <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                                 imageProcessing 
                                     ? 'bg-gray-500/20 text-gray-400 cursor-wait'
@@ -428,7 +453,9 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                         value={problemText}
                         onChange={(e) => setProblemText(e.target.value)}
                         placeholder="Find the derivative of f(x) = x^2 + 3x - 5&#10;&#10;Or use LaTeX: $\frac{d}{dx}(x^2 + 3x - 5)$&#10;&#10;Or upload/take a photo of your problem!"
-                        className="w-full min-h-[7rem] max-h-[24rem] resize-y bg-dark-800/50 border border-dark-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500"
+                        className={`w-full resize-y bg-dark-800/50 border border-dark-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500 ${
+                            textareaExpanded ? 'min-h-[18rem] max-h-[50vh]' : 'min-h-[7rem] max-h-[24rem]'
+                        }`}
                     />
                     
                     {/* LaTeX Preview - resizable height, scroll, wrap */}
@@ -448,7 +475,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                     )}
                     
                     <p className="text-xs text-gray-500">
-                        Tip: Use $...$ for inline LaTeX, $$...$$ for block equations. Drag textarea edge to resize.
+                        Tip: Use $...$ for inline LaTeX, $$...$$ for block. Expand button or drag textarea edge to resize.
                     </p>
                 </div>
 
