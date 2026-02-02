@@ -29,14 +29,23 @@ function SafeMath({ type, content, index }) {
  * LatexRenderer - Automatically detects and renders LaTeX in text
  *
  * Supports:
- * - Inline math: $...$ or \(...\)
+ * - ```latex ... ``` and ``` ... ``` (code blocks → block math)
  * - Block math: $$...$$ or \[...\]
- * - Mixed text with LaTeX. Invalid LaTeX falls back to raw text.
+ * - Inline math: $...$ or \(...\)
+ * - Invalid LaTeX falls back to raw text.
  */
+/**
+ * Preprocess: turn ```latex ... ``` and ``` ... ``` into $$...$$ so they render as block math
+ */
+function preprocessCodeBlocks(text) {
+    return text.replace(/```(?:latex)?\s*\n([\s\S]*?)```/g, (_, inner) => '$$' + inner.trim() + '$$');
+}
+
 function LatexRenderer({ text, className = '' }) {
     if (!text) return null;
 
-    const segments = parseLatex(text);
+    const normalized = preprocessCodeBlocks(text);
+    const segments = parseLatex(normalized);
 
     return (
         <span className={className}>
@@ -152,7 +161,8 @@ export function MathBlock({ math, inline = false }) {
  */
 export function containsLatex(text) {
     if (!text) return false;
-    return /\$[\s\S]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/.test(text);
+    return (/```(?:latex)?\s*\n[\s\S]*?```/.test(text)) ||
+        /\$[\s\S]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/.test(text);
 }
 
 export default LatexRenderer;
