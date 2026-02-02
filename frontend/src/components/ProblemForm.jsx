@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { createWorker } from 'tesseract.js';
 import { PROBLEM_TYPES, TIME_TIERS, NETWORKS } from '../config';
 import LatexRenderer, { containsLatex } from './LatexRenderer';
 
@@ -26,12 +27,9 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
     const [selectedBot, setSelectedBot] = useState('0x0000000000000000000000000000000000000000');
     const [subscriptionMode, setSubscriptionMode] = useState(false);
     
-    // Image OCR state
+    // Image OCR state (client-side Tesseract.js, no server/token cost)
     const [imageProcessing, setImageProcessing] = useState(false);
     const [imagePreview, setImagePreview] = useState(null);
-    
-    // Bot server URL for OCR
-    const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
     
     // Check if subscription mode is enabled on contract
     useEffect(() => {
@@ -97,18 +95,15 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
         }
     };
 
-    // Handle image upload for OCR
+    // Handle image upload — client-side OCR with Tesseract.js (no server, no token cost)
     const handleImageUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         
-        // Validate file type
         if (!file.type.startsWith('image/')) {
             onError('Please upload an image file');
             return;
         }
-        
-        // Validate file size (max 10MB)
         if (file.size > 10 * 1024 * 1024) {
             onError('Image too large. Maximum size is 10MB');
             return;
@@ -117,44 +112,36 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
         setImageProcessing(true);
         
         try {
-            // Convert to base64
-            const base64 = await new Promise((resolve, reject) => {
+            const dataUrl = await new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = () => resolve(reader.result);
                 reader.onerror = reject;
                 reader.readAsDataURL(file);
             });
+            setImagePreview(dataUrl);
             
-            setImagePreview(base64);
-            
-            // Call OCR API
-            const response = await fetch(`${botServerUrl}/api/ocr`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    image: base64,
-                    format: 'latex'
-                })
+            // Run OCR in browser (Tesseract.js)
+            const worker = await createWorker('eng', 1, {
+                logger: () => {} // silent
             });
+            const { data: { text } } = await worker.recognize(file);
+            await worker.terminate();
             
-            const result = await response.json();
-            
-            if (result.success) {
-                // Append extracted text to existing problem text
+            const extracted = (text || '').trim();
+            if (extracted) {
                 if (problemText.trim()) {
-                    setProblemText(prev => prev + '\n\n' + result.text);
+                    setProblemText(prev => prev + '\n\n' + extracted);
                 } else {
-                    setProblemText(result.text);
+                    setProblemText(extracted);
                 }
             } else {
-                onError(result.error || 'Failed to extract text from image');
+                onError('No text detected. Try a clearer image or type the problem.');
             }
         } catch (err) {
             console.error('OCR error:', err);
-            onError('Failed to process image: ' + err.message);
+            onError('Failed to read image: ' + err.message);
         } finally {
             setImageProcessing(false);
-            // Clear the file input
             e.target.value = '';
         }
     };
