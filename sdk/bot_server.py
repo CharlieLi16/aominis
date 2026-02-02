@@ -968,7 +968,11 @@ def ocr_image():
                 'content': [
                     {
                         'type': 'text',
-                        'text': 'Extract ONLY the math problem from this image. Output in LaTeX: use $...$ for inline math, $$...$$ for block. Ignore any existing answers or student work. Return only the problem text.',
+                        'text': '''
+Extract ONLY the math problem from this image.
+Output in LaTeX: use $...$ for inline math, $$...$$ for block.
+Ignore any existing answers or student work.
+Use line breaks for readability: break long sentences every 60–80 characters or at natural phrase boundaries; put (a)/(b) and each matrix on separate lines. Do not return one long single line.''',
                     },
                     {
                         'type': 'image_url',
