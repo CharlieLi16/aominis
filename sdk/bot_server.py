@@ -970,9 +970,10 @@ def ocr_image():
                         'type': 'text',
                         'text': '''
 Extract ONLY the math problem from this image.
-Output in LaTeX: use $...$ for inline math, $$...$$ for block.
+Output in Markdown: use **bold** for emphasis, - for lists, blank lines between paragraphs.
+For math use $...$ (inline) or $$...$$ (block). Keep it simple.
 Ignore any existing answers or student work.
-Use line breaks for readability: break long sentences every 60–80 characters or at natural phrase boundaries; put (a)/(b) and each matrix on separate lines. Do not return one long single line.''',
+Use line breaks: break long sentences every 60-80 characters; put (a)/(b) and each matrix on separate lines. Do not return one long single line.''',
                     },
                     {
                         'type': 'image_url',

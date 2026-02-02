@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { PROBLEM_TYPES, TIME_TIERS, NETWORKS } from '../config';
-import LatexRenderer, { containsLatex } from './LatexRenderer';
+import MarkdownRenderer from './MarkdownRenderer';
 
 // Solving method options
 const SOLVING_METHODS = [
@@ -350,7 +350,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                 <div className="mb-6 flex flex-col gap-2 min-h-0">
                     <div className="flex items-center justify-between mb-1">
                         <label className="block text-sm font-medium text-gray-300">
-                            Problem (LaTeX or plain text)
+                            Problem (Markdown or plain text)
                         </label>
                         
                         <div className="flex items-center gap-2">
@@ -452,14 +452,14 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                     <textarea
                         value={problemText}
                         onChange={(e) => setProblemText(e.target.value)}
-                        placeholder="Find the derivative of f(x) = x^2 + 3x - 5&#10;&#10;Or use LaTeX: $\frac{d}{dx}(x^2 + 3x - 5)$&#10;&#10;Or upload/take a photo of your problem!"
+                        placeholder="**Problem:** Find the derivative of f(x) = x^2 + 3x&#10;&#10;Or use math: $x^2$ or $$\\int_0^1 x\\,dx$$&#10;&#10;Or upload/take a photo of your problem!"
                         className={`w-full resize-y bg-dark-800/50 border border-dark-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500 ${
                             textareaExpanded ? 'min-h-[18rem] max-h-[50vh]' : 'min-h-[7rem] max-h-[24rem]'
                         }`}
                     />
                     
-                    {/* LaTeX Preview - resizable height, scroll, wrap */}
-                    {problemText && containsLatex(problemText) && (
+                    {/* Markdown Preview */}
+                    {problemText.trim() && (
                         <div className="min-h-0 flex flex-col max-h-[20rem] rounded-lg border border-dark-600 bg-dark-700/50 overflow-hidden">
                             <div className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 border-b border-dark-600">
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -468,14 +468,14 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                                 </svg>
                                 Preview
                             </div>
-                            <div className="flex-1 overflow-auto p-3 text-gray-200 break-words min-w-0">
-                                <LatexRenderer text={problemText} />
+                            <div className="flex-1 overflow-auto p-3 text-gray-200 break-words min-w-0 prose prose-invert prose-sm max-w-none">
+                                <MarkdownRenderer text={problemText} />
                             </div>
                         </div>
                     )}
                     
                     <p className="text-xs text-gray-500">
-                        Tip: Use $...$ for inline LaTeX, $$...$$ for block. Expand button or drag textarea edge to resize.
+                        Tip: Use **bold**, - lists, $...$ or $$...$$ for math. Expand or drag textarea to resize.
                     </p>
                 </div>
 
