@@ -3,39 +3,59 @@ import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 
 /**
+ * Renders one math segment with fallback to raw text on KaTeX error
+ */
+function SafeMath({ type, content, index }) {
+    const trimmed = (content || '').trim();
+    if (!trimmed) {
+        return <span key={index}>{content}</span>;
+    }
+    const commonProps = {
+        math: trimmed,
+        errorColor: '#f87171',
+        renderError: () => <span className="text-gray-300 font-mono text-sm">{trimmed}</span>,
+    };
+    if (type === 'block') {
+        return (
+            <span key={index} className="block my-2">
+                <BlockMath {...commonProps} />
+            </span>
+        );
+    }
+    return <InlineMath key={index} {...commonProps} />;
+}
+
+/**
  * LatexRenderer - Automatically detects and renders LaTeX in text
- * 
+ *
  * Supports:
  * - Inline math: $...$ or \(...\)
  * - Block math: $$...$$ or \[...\]
- * - Mixed text with LaTeX
- * 
- * Usage:
- *   <LatexRenderer text="Solve $x^2 + 2x + 1 = 0$" />
- *   <LatexRenderer text="The answer is $$\int_0^1 x^2 dx = \frac{1}{3}$$" />
+ * - Mixed text with LaTeX. Invalid LaTeX falls back to raw text.
  */
 function LatexRenderer({ text, className = '' }) {
     if (!text) return null;
 
-    // Parse text and split into segments (plain text and LaTeX)
     const segments = parseLatex(text);
 
     return (
         <span className={className}>
             {segments.map((segment, index) => {
-                if (segment.type === 'block') {
+                if (segment.type === 'block' || segment.type === 'inline') {
                     return (
-                        <span key={index} className="block my-2">
-                            <BlockMath math={segment.content} errorColor="#f87171" />
-                        </span>
+                        <SafeMath
+                            key={index}
+                            type={segment.type}
+                            content={segment.content}
+                            index={index}
+                        />
                     );
-                } else if (segment.type === 'inline') {
-                    return (
-                        <InlineMath key={index} math={segment.content} errorColor="#f87171" />
-                    );
-                } else {
-                    return <span key={index}>{segment.content}</span>;
                 }
+                return (
+                    <span key={index} className="whitespace-pre-wrap">
+                        {segment.content}
+                    </span>
+                );
             })}
         </span>
     );
