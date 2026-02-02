@@ -33,7 +33,11 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
     
     // Problem textarea expand/collapse
     const [textareaExpanded, setTextareaExpanded] = useState(false);
-    
+
+    // Skill / custom GPT prompt (optional instructions appended to solver prompt)
+    const [skillInstructions, setSkillInstructions] = useState('');
+    const [skillSectionOpen, setSkillSectionOpen] = useState(false);
+
     const botServerUrl = import.meta.env.VITE_BOT_SERVER_URL || 'https://aominis-quantl.pythonanywhere.com';
 
     const problemType = PROBLEM_TYPES[selectedTypeIndex]?.id ?? 0;
@@ -227,7 +231,8 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                         problemHash: problemHash,
                         problemText: problemText,
                         problemType: problemType,
-                        problemTypeLabel: problemTypeLabel || undefined
+                        problemTypeLabel: problemTypeLabel || undefined,
+                        skillInstructions: skillInstructions.trim() || undefined
                     })
                 });
             } catch (e) {
@@ -250,6 +255,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                             text: problemText,
                             type: problemType,
                             typeLabel: problemTypeLabel,
+                            skillInstructions: skillInstructions.trim() || undefined,
                             tier: timeTier,
                             hash: problemHash,
                             timestamp: Date.now(),
@@ -275,6 +281,7 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                             problem_text: problemText,
                             problem_type: problemType,
                             problem_type_label: problemTypeLabel || undefined,
+                            skill_instructions: skillInstructions.trim() || undefined,
                             submit_to_chain: true
                         })
                     });
@@ -300,7 +307,8 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                             hash: problemHash,
                             text: problemText,
                             type: problemType,
-                            type_label: problemTypeLabel || undefined
+                            type_label: problemTypeLabel || undefined,
+                            skill_instructions: skillInstructions.trim() || undefined
                         })
                     });
                     console.log('Problem stored to Bot Server');
@@ -361,6 +369,35 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                                 onChange={(e) => setProblemTypeLabelOverride(e.target.value)}
                                 placeholder="e.g. numerical analysis, abstract algebra"
                                 className="w-full max-w-xs bg-dark-800/50 border border-dark-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            />
+                        </div>
+                    )}
+                </div>
+
+                {/* Skill / Custom prompt - independent region to modify GPT instructions */}
+                <div className="mb-4 rounded-xl border border-dark-600 bg-dark-800/30 overflow-hidden">
+                    <button
+                        type="button"
+                        onClick={() => setSkillSectionOpen(!skillSectionOpen)}
+                        className="w-full flex items-center justify-between px-4 py-3 text-left text-sm font-medium text-gray-300 hover:bg-dark-700/50 transition-colors"
+                    >
+                        <span className="flex items-center gap-2">
+                            <span className="text-base">⚙</span>
+                            Skill / Custom prompt
+                        </span>
+                        <svg className={`w-4 h-4 text-gray-500 transition-transform ${skillSectionOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    {skillSectionOpen && (
+                        <div className="px-4 pb-4 pt-0 border-t border-dark-600/50">
+                            <p className="text-xs text-gray-500 mb-2">Optional instructions added to the solver prompt (e.g. &quot;Always use SI units&quot;, &quot;Explain each step briefly&quot;).</p>
+                            <textarea
+                                value={skillInstructions}
+                                onChange={(e) => setSkillInstructions(e.target.value)}
+                                placeholder="e.g. Use SI units. Keep steps concise. Prefer exact fractions over decimals."
+                                rows={3}
+                                className="w-full bg-dark-800/50 border border-dark-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-y min-h-[4rem]"
                             />
                         </div>
                     )}

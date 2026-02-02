@@ -119,11 +119,12 @@ PROBLEM_TYPE_NAMES = {
     4: "series/summation",
 }
 
-def solve_with_gpt(problem_type: int, problem_text: str = None, problem_type_label: str = None) -> dict:
+def solve_with_gpt(problem_type: int, problem_text: str = None, problem_type_label: str = None, skill_instructions: str = None) -> dict:
     """
     Solve a math problem using ChatGPT with step-by-step explanation.
     Returns dict with 'answer' and 'steps'.
     problem_type_label: optional string for GPT prompt (e.g. "linear algebra"); if not set, uses PROBLEM_TYPE_NAMES[problem_type].
+    skill_instructions: optional user-defined instructions appended to the prompt (e.g. "Always use SI units").
     """
     client = get_openai_client()
     if not client:
@@ -137,9 +138,17 @@ def solve_with_gpt(problem_type: int, problem_text: str = None, problem_type_lab
     
     type_name = (problem_type_label or "").strip() or PROBLEM_TYPE_NAMES.get(problem_type, "math")
     
+    skill_block = ""
+    if (skill_instructions or "").strip():
+        skill_block = f"""
+
+Additional instructions (user skill / preferences):
+{skill_instructions.strip()}"""
+
     prompt = f"""You are a {type_name} expert. Solve this {type_name} problem step by step:
 
 {problem_text}
+{skill_block}
 
 Format your response EXACTLY like this (use these exact markers):
 STEPS:
@@ -262,15 +271,16 @@ def solve_problem_fallback(problem_type: int) -> dict:
     default = {'answer': f"Solution for type {problem_type}", 'steps': []}
     return fallback_data.get(problem_type, default)
 
-def solve_problem(problem_type: int, problem_hash: str, problem_text: str = None, problem_type_label: str = None) -> dict:
+def solve_problem(problem_type: int, problem_hash: str, problem_text: str = None, problem_type_label: str = None, skill_instructions: str = None) -> dict:
     """
     Main solve function - tries GPT first, falls back to placeholder.
     Returns dict with 'answer' and 'steps'.
     problem_type_label: optional string for GPT prompt; if not set, uses PROBLEM_TYPE_NAMES[problem_type].
+    skill_instructions: optional user instructions appended to the GPT prompt.
     """
     # Try GPT if API key is configured
     if os.getenv('OPENAI_API_KEY'):
-        return solve_with_gpt(problem_type, problem_text, problem_type_label)
+        return solve_with_gpt(problem_type, problem_text, problem_type_label, skill_instructions)
     
     # Fallback to placeholder
     return solve_problem_fallback(problem_type)
@@ -386,10 +396,12 @@ def bot_loop():
                         
                         problem_text = None
                         problem_type_label = None
+                        skill_instructions = None
                         if problem_hash in problem_storage:
                             stored = problem_storage[problem_hash]
                             problem_text = stored.get('text')
                             problem_type_label = stored.get('type_label')
+                            skill_instructions = stored.get('skill_instructions')
                         
                         if problem_text:
                             bot_state.add_log(f'[BOT] Found problem: {problem_text[:50]}...', 'info')
@@ -397,7 +409,7 @@ def bot_loop():
                             bot_state.add_log(f'[BOT] Problem text NOT FOUND for hash {problem_hash[:18]}', 'warning')
                         
                         bot_state.add_log(f'[BOT] Solving with {"GPT" if os.getenv("OPENAI_API_KEY") else "fallback"}...', 'info')
-                        solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text, problem_type_label)
+                        solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text, problem_type_label, skill_instructions)
                         solution = solution_data['answer']
                         steps = solution_data.get('steps', [])
                         bot_state.add_log(f'[BOT] Solution: {solution} ({len(steps)} steps)', 'success')
@@ -667,20 +679,22 @@ class AutoSolver:
             raw_hash = order.problem_hash.hex().lower()
             problem_hash = '0x' + raw_hash if not raw_hash.startswith('0x') else raw_hash
             
-            # Try to get problem text and type_label from storage
+            # Try to get problem text, type_label, skill_instructions from storage
             problem_text = None
             problem_type_label = None
+            skill_instructions = None
             if problem_hash in problem_storage:
                 stored = problem_storage[problem_hash]
                 problem_text = stored.get('text')
                 problem_type_label = stored.get('type_label')
+                skill_instructions = stored.get('skill_instructions')
                 self.log(f'Found problem text: {problem_text[:50]}...', 'info')
             else:
                 self.log(f'Problem text not found for hash {problem_hash[:18]}...', 'warning')
             
             # Solve the problem
             self.log(f'Solving with {"GPT" if os.getenv("OPENAI_API_KEY") else "fallback"}...', 'info')
-            solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text, problem_type_label)
+            solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text, problem_type_label, skill_instructions)
             solution = solution_data['answer']
             steps = solution_data.get('steps', [])
             self.log(f'Solution: {solution} ({len(steps)} steps)', 'success')
@@ -1188,6 +1202,7 @@ def solve_endpoint():
     else:
         problem_hash_normalized = ''
     
+    skill_instructions = (data.get('skill_instructions') or data.get('skillInstructions') or '').strip() or None
     # If no problem text provided, try to get from storage
     if problem_hash_normalized and problem_hash_normalized in problem_storage:
         stored = problem_storage[problem_hash_normalized]
@@ -1195,11 +1210,13 @@ def solve_endpoint():
             problem_text = stored.get('text')
         if not problem_type_label and stored.get('type_label'):
             problem_type_label = stored.get('type_label')
+        if not skill_instructions and stored.get('skill_instructions'):
+            skill_instructions = stored.get('skill_instructions')
     
     logger.info(f"Solving problem type {problem_type}: {problem_text[:50] if problem_text else 'No text'}...")
     
     try:
-        result = solve_problem(problem_type, problem_hash_normalized, problem_text, problem_type_label)
+        result = solve_problem(problem_type, problem_hash_normalized, problem_text, problem_type_label, skill_instructions)
         logger.info(f"Solution: {result['answer']} ({len(result['steps'])} steps)")
         
         # Store solution if order_id provided
@@ -1315,6 +1332,7 @@ def store_problem():
         'text': data['text'],
         'type': data.get('type', 0),
         'type_label': (data.get('type_label') or data.get('problemTypeLabel') or '').strip() or None,
+        'skill_instructions': (data.get('skill_instructions') or data.get('skillInstructions') or '').strip() or None,
         'timestamp': datetime.now().isoformat()
     }
     save_problem_storage()  # Persist to file
@@ -1543,17 +1561,19 @@ def receive_problem_webhook():
     # Store problem for solving
     normalized_hash = '0x' + problem_hash.lower().replace('0x', '')
     problem_type_label = (data.get('problem_type_label') or data.get('problemTypeLabel') or '').strip() or None
+    skill_instructions = (data.get('skill_instructions') or data.get('skillInstructions') or '').strip() or None
     problem_storage[normalized_hash] = {
         'text': problem_text,
         'type': problem_type,
         'type_label': problem_type_label,
+        'skill_instructions': skill_instructions,
         'timestamp': datetime.now().isoformat()
     }
     save_problem_storage()
     
     # Solve the problem immediately
     try:
-        solution_data = solve_problem(problem_type, normalized_hash, problem_text, problem_type_label)
+        solution_data = solve_problem(problem_type, normalized_hash, problem_text, problem_type_label, skill_instructions)
         solution = solution_data['answer']
         steps = solution_data.get('steps', [])
         
