@@ -321,31 +321,31 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
             </div>
 
             <form onSubmit={handleSubmit}>
-                {/* Problem Type */}
-                <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-300 mb-3">Problem Type</label>
-                    <div className="grid grid-cols-5 gap-2">
+                {/* Problem Type - compact, wrap */}
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Problem Type</label>
+                    <div className="flex flex-wrap gap-1.5">
                         {PROBLEM_TYPES.map(type => (
                             <button
                                 key={type.id}
                                 type="button"
                                 onClick={() => setProblemType(type.id)}
-                                className={`p-3 rounded-xl text-center transition-all ${
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-all ${
                                     problemType === type.id
-                                        ? 'bg-blue-500/20 border-2 border-blue-500/50 text-blue-400'
+                                        ? 'bg-blue-500/20 border border-blue-500/50 text-blue-400'
                                         : 'bg-dark-800/50 border border-dark-600 text-gray-400 hover:border-dark-500'
                                 }`}
                             >
-                                <div className="text-xl mb-1">{type.icon}</div>
-                                <div className="text-xs">{type.name}</div>
+                                <span className="text-base leading-none">{type.icon}</span>
+                                <span>{type.name}</span>
                             </button>
                         ))}
                     </div>
                 </div>
 
-                {/* Problem Text */}
-                <div className="mb-6">
-                    <div className="flex items-center justify-between mb-2">
+                {/* Problem Text + Preview - resizable, wrap, fit */}
+                <div className="mb-6 flex flex-col gap-2 min-h-0">
+                    <div className="flex items-center justify-between mb-1">
                         <label className="block text-sm font-medium text-gray-300">
                             Problem (LaTeX or plain text)
                         </label>
@@ -428,27 +428,27 @@ function ProblemForm({ account, coreContract, usdcContract, network, onError, su
                         value={problemText}
                         onChange={(e) => setProblemText(e.target.value)}
                         placeholder="Find the derivative of f(x) = x^2 + 3x - 5&#10;&#10;Or use LaTeX: $\frac{d}{dx}(x^2 + 3x - 5)$&#10;&#10;Or upload/take a photo of your problem!"
-                        className="w-full bg-dark-800/50 border border-dark-600 rounded-xl px-4 py-3 text-sm h-32 resize-y focus:outline-none focus:border-blue-500 placeholder-gray-500"
+                        className="w-full min-h-[7rem] max-h-[24rem] resize-y bg-dark-800/50 border border-dark-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500"
                     />
                     
-                    {/* LaTeX Preview */}
+                    {/* LaTeX Preview - resizable height, scroll, wrap */}
                     {problemText && containsLatex(problemText) && (
-                        <div className="mt-2 p-3 bg-dark-700/50 border border-dark-600 rounded-lg">
-                            <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                        <div className="min-h-0 flex flex-col max-h-[20rem] rounded-lg border border-dark-600 bg-dark-700/50 overflow-hidden">
+                            <div className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 border-b border-dark-600">
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                 </svg>
-                                Preview:
+                                Preview
                             </div>
-                            <div className="text-gray-200">
+                            <div className="flex-1 overflow-auto p-3 text-gray-200 break-words min-w-0">
                                 <LatexRenderer text={problemText} />
                             </div>
                         </div>
                     )}
                     
-                    <p className="text-xs text-gray-500 mt-1">
-                        Tip: Use $...$ for inline LaTeX, $$...$$ for block equations
+                    <p className="text-xs text-gray-500">
+                        Tip: Use $...$ for inline LaTeX, $$...$$ for block equations. Drag textarea edge to resize.
                     </p>
                 </div>
 
