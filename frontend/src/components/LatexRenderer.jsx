@@ -35,10 +35,15 @@ function SafeMath({ type, content, index }) {
  * - Invalid LaTeX falls back to raw text.
  */
 /**
- * Preprocess: turn ```latex ... ``` and ``` ... ``` into $$...$$ so they render as block math
+ * Preprocess: normalize LaTeX delimiters so block math is always $$...$$
+ * - ```latex ... ``` and ``` ... ``` -> $$...$$
+ * - \[ ... \] -> $$...$$ (so \[ \begin{pmatrix}...\end{pmatrix} \] renders)
  */
 function preprocessCodeBlocks(text) {
-    return text.replace(/```(?:latex)?\s*\n([\s\S]*?)```/g, (_, inner) => '$$' + inner.trim() + '$$');
+    let out = text;
+    out = out.replace(/```(?:latex)?\s*\n([\s\S]*?)```/g, (_, inner) => '$$' + inner.trim() + '$$');
+    out = out.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => '$$' + inner.trim() + '$$');
+    return out;
 }
 
 function LatexRenderer({ text, className = '' }) {
@@ -162,7 +167,8 @@ export function MathBlock({ math, inline = false }) {
 export function containsLatex(text) {
     if (!text) return false;
     return (/```(?:latex)?\s*\n[\s\S]*?```/.test(text)) ||
-        /\$[\s\S]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/.test(text);
+        /\\\[[\s\S]*?\\\]/.test(text) ||
+        /\$[\s\S]+?\$|\\\([\s\S]+?\\\)/.test(text);
 }
 
 export default LatexRenderer;
