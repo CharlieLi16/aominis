@@ -1,10 +1,12 @@
 """Quick test to debug contract connection issues"""
 import os
+import sys
 from dotenv import load_dotenv
 from web3 import Web3
 
-# Load .env
-load_dotenv()
+# Load .env from sdk directory
+SDK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'sdk')
+load_dotenv(os.path.join(SDK_DIR, '.env'))
 
 # Config
 rpc_url = os.getenv("RPC_URL")

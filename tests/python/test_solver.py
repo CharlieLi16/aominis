@@ -12,13 +12,14 @@ import asyncio
 import sys
 import os
 
-# Add current directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add sdk directory to path
+SDK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'sdk')
+sys.path.insert(0, SDK_DIR)
 
 from ominis_sdk import ProblemType
 
 # Import the solver from examples
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'examples'))
+sys.path.insert(0, os.path.join(SDK_DIR, 'examples'))
 
 async def test_solver():
     """Test the math solver with various problem types"""

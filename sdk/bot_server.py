@@ -210,13 +210,13 @@ def solve_with_gpt(problem_type: int, problem_text: str = None, problem_type_lab
     """
     client = get_openai_client()
     if not client:
-        logger.warning("OpenAI client not available, using fallback")
-        return solve_problem_fallback(problem_type)
+        logger.error("OpenAI client not available - no API key configured")
+        raise ValueError("OpenAI API key not configured. Cannot solve problem.")
     
-    # IMPORTANT: If no problem text, use fallback instead of letting GPT make up a random problem
+    # IMPORTANT: If no problem text, raise error instead of letting GPT make up a random problem
     if not problem_text or not problem_text.strip():
-        logger.warning("No problem text provided to GPT, using fallback solution")
-        return solve_problem_fallback(problem_type)
+        logger.error("No problem text provided to GPT")
+        raise ValueError("No problem text provided. Cannot solve problem.")
     
     type_name = (problem_type_label or "").strip() or PROBLEM_TYPE_NAMES.get(problem_type, "math")
     
@@ -263,8 +263,7 @@ ANSWER: [final answer only, in the simplest form. For linear algebra: state "Uni
         return result
     except Exception as e:
         logger.error(f"GPT error: {e}")
-        fallback = solve_problem_fallback(problem_type)
-        return {'answer': fallback, 'steps': []}
+        raise
 
 
 def parse_gpt_solution(content: str) -> dict:
@@ -304,64 +303,19 @@ def parse_gpt_solution(content: str) -> dict:
     
     return result
 
-def solve_problem_fallback(problem_type: int) -> dict:
-    """
-    Fallback solutions when GPT is not available.
-    Returns dict with 'answer' and 'steps' for consistency.
-    """
-    fallback_data = {
-        0: {
-            'answer': "f'(x) = 2x + 3",
-            'steps': [
-                {'step': 1, 'content': 'Apply power rule to x²', 'result': '2x'},
-                {'step': 2, 'content': 'Apply constant rule to 3x', 'result': '3'},
-                {'step': 3, 'content': 'Combine terms', 'result': '2x + 3'}
-            ]
-        },
-        1: {
-            'answer': "F(x) = x^2/2 + C",
-            'steps': [
-                {'step': 1, 'content': 'Apply power rule: ∫x dx = x²/2', 'result': 'x²/2'},
-                {'step': 2, 'content': 'Add constant of integration', 'result': '+ C'}
-            ]
-        },
-        2: {
-            'answer': "lim = 1",
-            'steps': [
-                {'step': 1, 'content': 'Direct substitution', 'result': '1'}
-            ]
-        },
-        3: {
-            'answer': "y = Ce^x + x",
-            'steps': [
-                {'step': 1, 'content': 'Find homogeneous solution', 'result': 'Ce^x'},
-                {'step': 2, 'content': 'Find particular solution', 'result': 'x'},
-                {'step': 3, 'content': 'Combine solutions', 'result': 'Ce^x + x'}
-            ]
-        },
-        4: {
-            'answer': "Sum = n(n+1)/2",
-            'steps': [
-                {'step': 1, 'content': 'Apply arithmetic series formula', 'result': 'n(n+1)/2'}
-            ]
-        },
-    }
-    default = {'answer': f"Solution for type {problem_type}", 'steps': []}
-    return fallback_data.get(problem_type, default)
-
 def solve_problem(problem_type: int, problem_hash: str, problem_text: str = None, problem_type_label: str = None, skill_instructions: str = None) -> dict:
     """
-    Main solve function - tries GPT first, falls back to placeholder.
+    Main solve function - uses GPT to solve.
     Returns dict with 'answer' and 'steps'.
+    Raises ValueError if GPT is not available or problem text is missing.
     problem_type_label: optional string for GPT prompt; if not set, uses PROBLEM_TYPE_NAMES[problem_type].
     skill_instructions: optional user instructions appended to the GPT prompt.
     """
-    # Try GPT if API key is configured
-    if os.getenv('OPENAI_API_KEY'):
-        return solve_with_gpt(problem_type, problem_text, problem_type_label, skill_instructions)
+    # Require GPT - no fallback
+    if not os.getenv('OPENAI_API_KEY'):
+        raise ValueError("OpenAI API key not configured. Cannot solve problem.")
     
-    # Fallback to placeholder
-    return solve_problem_fallback(problem_type)
+    return solve_with_gpt(problem_type, problem_text, problem_type_label, skill_instructions)
 
 # ========== Bot Logic ==========
 
@@ -486,7 +440,7 @@ def bot_loop():
                         else:
                             bot_state.add_log(f'[BOT] Problem text NOT FOUND for hash {problem_hash[:18]}', 'warning')
                         
-                        bot_state.add_log(f'[BOT] Solving with {"GPT" if os.getenv("OPENAI_API_KEY") else "fallback"}...', 'info')
+                        bot_state.add_log('[BOT] Solving with GPT...', 'info')
                         solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text, problem_type_label, skill_instructions)
                         solution = solution_data['answer']
                         steps = solution_data.get('steps', [])
@@ -771,7 +725,7 @@ class AutoSolver:
                 self.log(f'Problem text not found for hash {problem_hash[:18]}...', 'warning')
             
             # Solve the problem
-            self.log(f'Solving with {"GPT" if os.getenv("OPENAI_API_KEY") else "fallback"}...', 'info')
+            self.log('Solving with GPT...', 'info')
             solution_data = solve_problem(order.problem_type.value, problem_hash, problem_text, problem_type_label, skill_instructions)
             solution = solution_data['answer']
             steps = solution_data.get('steps', [])
@@ -1309,12 +1263,11 @@ def solve_endpoint():
         })
     except Exception as e:
         logger.error(f"Solve error: {e}")
-        fallback = solve_problem_fallback(problem_type)
         return jsonify({
             'success': False,
             'error': str(e),
-            'solution': fallback['answer'],
-            'steps': fallback['steps']
+            'solution': None,
+            'steps': []
         })
 
 # ========== Problem Storage ==========
