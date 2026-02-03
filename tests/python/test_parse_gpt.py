@@ -214,6 +214,56 @@ ANSWER:
 ```""",
         "expected_steps_count": 2,
     },
+    
+    {
+        "name": "Multi-part problem (a)(b) with matrices",
+        "input": """STEPS:
+
+**(a)**  
+1. Start with the original matrix => given
+2. Row reduce R2 - 4*R1 => elimination
+3. Continue to RREF => final form
+
+**(b)**
+4. Start with second matrix => given
+5. Row reduce => RREF
+
+ANSWER:
+**(a)** Infinitely many solutions. The RREF is:
+\\[
+\\begin{pmatrix}
+1 & 0 & -1 & -2 \\\\
+0 & 1 & 2 & 3 \\\\
+0 & 0 & 0 & 0
+\\end{pmatrix}
+\\]
+Free variable: x₃. Solution: x₁ = -2 + x₃, x₂ = 3 - 2x₃, x₃ free.
+
+**(b)** Inconsistent (no solution). The RREF shows a row [0 0 0 | 1].""",
+        "expected_answer": """**(a)** Infinitely many solutions. The RREF is:
+\\[
+\\begin{pmatrix}
+1 & 0 & -1 & -2 \\\\
+0 & 1 & 2 & 3 \\\\
+0 & 0 & 0 & 0
+\\end{pmatrix}
+\\]
+Free variable: x₃. Solution: x₁ = -2 + x₃, x₂ = 3 - 2x₃, x₃ free.
+
+**(b)** Inconsistent (no solution). The RREF shows a row [0 0 0 | 1].""",
+        "expected_steps_count": 5,
+    },
+    
+    {
+        "name": "GPT response with embedded ANSWER in steps (edge case)",
+        "input": """STEPS:
+1. First we need to find the ANSWER to part a => start
+2. Continue solving => done
+
+ANSWER: The final result is 42""",
+        "expected_answer": "The final result is 42",
+        "expected_steps_count": 2,
+    },
 ]
 
 

@@ -255,11 +255,12 @@ ANSWER: [final answer only, in the simplest form. For linear algebra: state "Uni
             temperature=0.1
         )
         content = response.choices[0].message.content.strip()
-        logger.info(f"GPT response: {content[:200]}...")
+        logger.info(f"GPT response ({len(content)} chars): {content[:500]}...")
         
         # Parse the response
         result = parse_gpt_solution(content)
-        logger.info(f"Parsed: answer={result['answer']}, steps={len(result['steps'])}")
+        logger.info(f"Parsed: steps={len(result['steps'])}, answer ({len(result['answer'])} chars):")
+        logger.info(f"  ANSWER: {result['answer'][:300]}{'...' if len(result['answer']) > 300 else ''}")
         return result
     except Exception as e:
         logger.error(f"GPT error: {e}")
