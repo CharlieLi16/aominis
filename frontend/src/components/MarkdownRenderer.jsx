@@ -16,12 +16,33 @@ function unwrapMarkdownCodeBlock(md) {
 }
 
 /**
+ * Convert LaTeX delimiters to remark-math compatible format:
+ * - \[...\] → $$...$$ (display math)
+ * - \(...\) → $...$ (inline math)
+ * remark-math only supports $...$ and $$...$$, not \[...\] or \(...\)
+ */
+function convertLatexDelimiters(text) {
+    if (!text) return text;
+    // Convert \[...\] to $$...$$  (display math)
+    let result = text.replace(/\\\[([\s\S]*?)\\\]/g, (match, content) => {
+        return `$$${content}$$`;
+    });
+    // Convert \(...\) to $...$  (inline math)
+    result = result.replace(/\\\(([\s\S]*?)\\\)/g, (match, content) => {
+        return `$${content}$`;
+    });
+    return result;
+}
+
+/**
  * Renders Markdown with optional math: $...$ and $$...$$ via KaTeX.
  * Supports GFM: lists, tables, bold, italic, code, etc.
  */
 function MarkdownRenderer({ text, className = '' }) {
     if (!text) return null;
-    const content = unwrapMarkdownCodeBlock(text);
+    // 1. Unwrap markdown code blocks
+    // 2. Convert \[...\] and \(...\) to $$...$$ and $...$
+    const content = convertLatexDelimiters(unwrapMarkdownCodeBlock(text));
 
     return (
         <div className={`markdown-body ${className}`}>
